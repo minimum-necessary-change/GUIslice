@@ -7,7 +7,7 @@
 //
 // The MIT License
 //
-// Copyright 2018 Calvin Hass
+// Copyright 2016-2019 Calvin Hass
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -56,7 +56,18 @@
   #define DRV_SDL_FIX_TTY      "/dev/tty0"
 #endif
 
+// Define driver names
+#if defined(DRV_DISP_SDL1)
+  const char* m_acDrvDisp = "SDL1";
+#elif defined(DRV_DISP_SDL2)
+  const char* m_acDrvDisp = "SDL2";
+#endif
 
+#if defined(DRV_TOUCH_TSLIB)
+  const char* m_acDrvTouch = "TSLIB";
+#else
+  const char* m_acDrvTouch = "SDL";
+#endif
 
 
 // =======================================================================
@@ -247,6 +258,17 @@ void gslc_DrvDestruct(gslc_tsGui* pGui)
   SDL_Quit();
 }
 
+const char* gslc_DrvGetNameDisp(gslc_tsGui* pGui)
+{
+  return m_acDrvDisp;
+}
+
+const char* gslc_DrvGetNameTouch(gslc_tsGui* pGui)
+{
+  return m_acDrvTouch;
+}
+
+
 // -----------------------------------------------------------------------
 // Image/surface handling Functions
 // -----------------------------------------------------------------------
@@ -427,9 +449,10 @@ bool gslc_DrvSetBkgndColor(gslc_tsGui* pGui,gslc_tsColor nCol)
 
 bool gslc_DrvSetElemImageNorm(gslc_tsGui* pGui,gslc_tsElem* pElem,gslc_tsImgRef sImgRef)
 {
-  if (pElem->sImgRefNorm.pvImgRaw != NULL) {
-    GSLC_DEBUG_PRINT("ERROR: DrvSetElemImageNorm(%s) with pvImgRaw already set\n","");
-    return false;
+  // Dispose of previous image
+  if (pElem->sImgRefNorm.eImgFlags != GSLC_IMGREF_NONE) {
+    gslc_DrvImageDestruct(pElem->sImgRefNorm.pvImgRaw);
+    pElem->sImgRefNorm = gslc_ResetImage();
   }
 
   pElem->sImgRefNorm = sImgRef;
@@ -444,9 +467,10 @@ bool gslc_DrvSetElemImageNorm(gslc_tsGui* pGui,gslc_tsElem* pElem,gslc_tsImgRef 
 
 bool gslc_DrvSetElemImageGlow(gslc_tsGui* pGui,gslc_tsElem* pElem,gslc_tsImgRef sImgRef)
 {
-  if (pElem->sImgRefGlow.pvImgRaw != NULL) {
-    GSLC_DEBUG_PRINT("ERROR: DrvSetElemImageGlow(%s) with pvImgRaw already set\n","");
-    return false;
+  // Dispose of previous image
+  if (pElem->sImgRefGlow.eImgFlags != GSLC_IMGREF_NONE) {
+    gslc_DrvImageDestruct(pElem->sImgRefGlow.pvImgRaw);
+    pElem->sImgRefGlow = gslc_ResetImage();
   }
 
   pElem->sImgRefGlow = sImgRef;
@@ -981,6 +1005,14 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
 }
 
 
+/// Change display rotation and any associated touch orientation
+bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
+{
+  // TODO: Implement support for display rotation
+  GSLC_DEBUG_PRINT("ERROR: DrvRotate(%s) not supported in current DRV_DISP_SDL* mode yet\n","");
+  return false;
+}
+
 // =======================================================================
 // Private Functions
 // =======================================================================
@@ -1404,7 +1436,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
   // Since we are only requesting at most 1 sample, the return
   // value should either be 0 (no samples) or 1 (sample success)
 
-  if (nRet >= 0) {
+  if (nRet > 0) {
     // Sample successfully fetched
     (*pnX)          = pSamp.x;
     (*pnY)          = pSamp.y;

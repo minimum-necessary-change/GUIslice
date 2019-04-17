@@ -8,8 +8,11 @@
 //
 
 #include "GUIslice.h"
-#include "GUIslice_ex.h"
 #include "GUIslice_drv.h"
+
+// Include any extended elements
+#include "elem/XCheckbox.h"
+#include "elem/XGauge.h"
 
 #include <math.h>
 #include <libgen.h>       // For path parsing
@@ -17,7 +20,7 @@
 
 // Defines for resources
 #define MAX_PATH  255
-#define FONT1 "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
+#define FONT1 "/usr/share/fonts/truetype/noto/NotoMono-Regular.ttf"
 #define IMG_LOGO        "/res/logo1-200x40.bmp"
 char m_strImgLogo[MAX_PATH];
 

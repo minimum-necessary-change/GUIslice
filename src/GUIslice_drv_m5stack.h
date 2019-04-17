@@ -10,7 +10,7 @@
 //
 // The MIT License
 //
-// Copyright 2018 Calvin Hass
+// Copyright 2016-2019 Calvin Hass
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -85,7 +85,7 @@ extern const char GSLC_PMEM ERRSTR_PXD_NULL[];
 // Driver-specific members
 // =======================================================================
 typedef struct {
-  uint16_t      nColRawBkgnd;   ///< Background color (if not image-based)
+  gslc_tsColor  nColBkgnd;      ///< Background color (if not image-based)
 
   gslc_tsRect   rClipRect;      ///< Clipping rectangle
 
@@ -146,6 +146,25 @@ bool gslc_DrvInitTs(gslc_tsGui* pGui,const char* acDev);
 ///
 void gslc_DrvDestruct(gslc_tsGui* pGui);
 
+
+///
+/// Get the display driver name
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return String containing driver name
+///
+const char* gslc_DrvGetNameDisp(gslc_tsGui* pGui);
+
+
+///
+/// Get the touch driver name
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return String containing driver name
+///
+const char* gslc_DrvGetNameTouch(gslc_tsGui* pGui);
 
 // -----------------------------------------------------------------------
 // Image/surface handling Functions
@@ -226,7 +245,7 @@ void gslc_DrvImageDestruct(void* pvImg);
 /// \param[in]  pGui:          Pointer to GUI
 /// \param[in]  pRect:         Rectangular region to constrain edits
 ///
-/// \return none
+/// \return true if success, false if error
 ///
 bool gslc_DrvSetClipRect(gslc_tsGui* pGui,gslc_tsRect* pRect);
 
@@ -245,7 +264,6 @@ bool gslc_DrvSetClipRect(gslc_tsGui* pGui,gslc_tsRect* pRect);
 /// \return Void ptr to driver-specific font if load was successful, NULL otherwise
 ///
 const void* gslc_DrvFontAdd(gslc_teFontRefType eFontRefType,const void* pvFontRef,uint16_t nFontSz);
-
 
 ///
 /// Release all fonts defined in the GUI
@@ -485,6 +503,23 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
 ///
 void gslc_DrvDrawMonoFromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY, const unsigned char *pBitmap,bool bProgMem);
 
+///
+/// Draw a color 24-bit depth bitmap from a memory array
+/// - Note that users must convert images from their native
+///   format (eg. BMP, PNG, etc.) into a C array. Please
+///   refer to the following guide for details:
+///   https://github.com/ImpulseAdventure/GUIslice/wiki/Display-Images-from-FLASH
+/// - The converted file (c array) can then be included in the sketch.
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  nDstX:       X coord for copy
+/// \param[in]  nDstY:       Y coord for copy
+/// \param[in]  pBitmap:     Pointer to bitmap buffer
+/// \param[in]  bProgMem:    Bitmap is stored in Flash if true, RAM otherwise
+///
+/// \return none
+///
+void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,const unsigned char* pBitmap,bool bProgMem);
 
 ///
 /// Copy the background image to destination screen
@@ -523,9 +558,10 @@ bool gslc_DrvInitTouch(gslc_tsGui* pGui,const char* acDev);
 /// \param[out] pnX:         Ptr to X coordinate of last touch event (UNUSED)
 /// \param[out] pnY:         Ptr to Y coordinate of last touch event (UNUSED)
 /// \param[out] pnPress:     Ptr to Pressure level of last touch event (0 for none, 1 for touch) (UNUSED)
+/// \param[out] peInputEvent Indication of event type
+/// \param[out] pnInputVal   Additional data for event type
 ///
 /// \return true if an event was detected or false otherwise
-/// \todo Doc
 ///
 bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal);
 
@@ -537,24 +573,7 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
 // -----------------------------------------------------------------------
 
 ///
-/// Change rotation and axes swap/flip
-///
-/// \param[in]  pGui:        Pointer to GUI
-/// \param[in]  nRotation:   Screen Rotation value (0, 1, 2 or 3)
-/// \param[in]  nSwapXY:     Touchscreen Swap X/Y axes
-/// \param[in]  nFlipX:      Touchscreen Flip X axis
-/// \param[in]  nFlipY:      Touchscreen Flip Y axis
-///
-/// \return true if successful
-///
-bool gslc_DrvRotateSwapFlip(gslc_tsGui* pGui, uint8_t nRotation, uint8_t nSwapXY, uint8_t nFlipX, uint8_t nFlipY );
-
-
-///
 /// Change rotation, automatically adapt touchscreen axes swap/flip
-///
-/// The function assumes that the touchscreen settings for swap and flip in GUIslice_config_ard.h
-/// are valid for the rotation defined in GUIslice_config_ard.h
 ///
 /// \param[in]  pGui:        Pointer to GUI
 /// \param[in]  nRotation:   Screen Rotation value (0, 1, 2 or 3)

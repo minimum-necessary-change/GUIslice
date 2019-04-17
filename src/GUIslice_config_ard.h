@@ -16,7 +16,7 @@
 //
 // The MIT License
 //
-// Copyright 2018 Calvin Hass
+// Copyright 2016-2019 Calvin Hass
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -83,13 +83,15 @@ extern "C" {
   // - Uncomment one of the following touchscreen drivers DRV_TOUCH_*
   //   applicable to the controller chip in use
 
-  //  #define DRV_TOUCH_NONE            // No touchscreen support & no input (GPIO / keyboard)
-      #define DRV_TOUCH_ADA_STMPE610    // Adafruit STMPE610 touch driver
+      #define DRV_TOUCH_NONE            // No touchscreen support & no input (GPIO / keyboard)
+  //  #define DRV_TOUCH_ADA_STMPE610    // Adafruit STMPE610 touch driver
   //  #define DRV_TOUCH_ADA_FT6206      // Adafruit FT6206 touch driver
   //  #define DRV_TOUCH_ADA_SIMPLE      // Adafruit Touchscreen
   //  #define DRV_TOUCH_TFT_ESPI        // TFT_eSPI integrated XPT2046 touch driver
   //  #define DRV_TOUCH_M5STACK         // M5stack integrated button driver
-  //  #define DRV_TOUCH_XPT2046         // Arduino build in XPT2046 touch driver (<XPT2046_touch.h>)
+  //  #define DRV_TOUCH_XPT2046_PS      // PaulStoffregen/XPT2046_Touchscreen
+  //  #define DRV_TOUCH_XPT2046_STM     // Arduino_STM32/Serasidis_XPT2046_touch (XPT2046_touch.h)
+  //  #define DRV_TOUCH_INPUT           // No touchscreen support, but input only (GPIO / keyboard)
   //  #define DRV_TOUCH_HANDLER         // touch handler class
 
 
@@ -108,6 +110,7 @@ extern "C" {
   //#define DRV_DISP_ADAGFX_ILI9341_8BIT  // Adafruit ILI9341 (8-bit interface)
   //#define DRV_DISP_ADAGFX_ST7735        // Adafruit ST7735
   //#define DRV_DISP_ADAGFX_SSD1306       // Adafruit SSD1306
+  //#define DRV_DISP_ADAGFX_HX8347        // prenticedavid/HX8347D_kbv
   //#define DRV_DISP_ADAGFX_HX8357        // Adafruit HX8357
   //#define DRV_DISP_ADAGFX_PCD8544       // Adafruit PCD8544
 
@@ -136,9 +139,6 @@ extern "C" {
 
   // Set Default rotation
   // you can specify values 0,1,2,3, rotation is clockwise
-  // - Note that if you change this you will likely have to change
-  //   GLSC_TOUCH_ROTATE as well to ensure that the touch screen
-  //   orientation matches the display rotation
   #define GSLC_ROTATE     1
 
 
@@ -198,9 +198,6 @@ extern "C" {
 
   // Set Default rotation
   // you can specify values 0,1,2,3, rotation is clockwise
-  // - Note that if you change this you will likely have to change
-  //   GLSC_TOUCH_ROTATE as well to ensure that the touch screen
-  //   orientation matches the display rotation
   #define GSLC_ROTATE     1
 
 // -----------------------------------------------------------------------------
@@ -220,9 +217,6 @@ extern "C" {
 
   // Set Default rotation
   // you can specify values 0,1,2,3, rotation is clockwise
-  // - Note that if you change this you will likely have to change
-  //   GLSC_TOUCH_ROTATE as well to ensure that the touch screen
-  //   orientation matches the display rotation
   #define GSLC_ROTATE     1
 
 // -----------------------------------------------------------------------------
@@ -233,9 +227,6 @@ extern "C" {
 
   // Set Default rotation
   // you can specify values 0,1,2,3, rotation is clockwise
-  // - Note that if you change this you will likely have to change
-  //   GLSC_TOUCH_ROTATE as well to ensure that the touch screen
-  //   orientation matches the display rotation
 
   // NOTE: M5stack has a fixed display. A setting of 1 should
   //       match the built-in display and not need changing.
@@ -335,8 +326,30 @@ extern "C" {
 
 
 // -----------------------------------------------------------------------------
-#elif defined(DRV_TOUCH_XPT2046)
-  // Arduino built in XPT2046 touch driver (<XPT2046_touch.h>)
+#elif defined(DRV_TOUCH_XPT2046_PS)
+  // PaulStoffregen/XPT2046_Touchscreen
+
+  // Chip select pin for touch
+  #define XPT2046_CS 3
+
+  // Calibration values for touch display
+  // - These values may need to be updated to match your display
+  // - empirically found for XPT2046
+  #define ADATOUCH_X_MIN    246
+  #define ADATOUCH_Y_MIN    3925
+  #define ADATOUCH_X_MAX    3837
+  #define ADATOUCH_Y_MAX    370
+
+  // Define pressure threshold for detecting a touch
+  #define ADATOUCH_PRESS_MIN 10
+  #define ADATOUCH_PRESS_MAX 1000
+
+// -----------------------------------------------------------------------------
+#elif defined(DRV_TOUCH_XPT2046_STM)
+  // Arduino_STM32/Serasidis_XPT2046_touch (XPT2046_touch.h)
+  // NOTE: This touch library is included in the Arduino_STM32 library
+  //       While it still works on many non-STM32 targets, it is recommended
+  //       that users use DRV_TOUCH_XPT2046_PS instead.
 
   // SPI2 is used. Due to some known issues of the TFT SPI driver working on SPI1
   // it was not possible to share the touch with SPI1.
@@ -358,7 +371,12 @@ extern "C" {
   #define ADATOUCH_Y_MAX 3805
 
   // Define pressure threshold for detecting a touch
-  #define ADATOUCH_PRESS_MIN 0
+  #define ADATOUCH_PRESS_MIN 10
+  #define ADATOUCH_PRESS_MAX 1000
+
+// -----------------------------------------------------------------------------
+#elif defined(DRV_TOUCH_INPUT)
+// Include basic support for GPIO/keyboard only
 
 // -----------------------------------------------------------------------------
 #elif defined(DRV_TOUCH_HANDLER)
@@ -375,11 +393,6 @@ extern "C" {
 // -----------------------------------------------------------------------------
 
 
-  // Default rotation of the touch, you can specify values 0,1,2,3, rotation is clockwise
-  // it is useful to specify the GLSC_TOUCH_ROTATE_OFFSET as an offset to the GLSC_ROTATE,
-  // thus changing GLSC_ROTATE automatically adopts the GLSC_TOUCH_ROTATE
-  #define GSLC_TOUCH_ROTATE 1
-  
   // TODO: maybe those macros should be moved to one include file which is included by all drivers
   #define TOUCH_ROTATION_DATA 0x6350
   #define TOUCH_ROTATION_SWAPXY(rotation) ((( TOUCH_ROTATION_DATA >> ((rotation&0x03)*4) ) >> 2 ) & 0x01 )
@@ -389,9 +402,8 @@ extern "C" {
   // - Set any of the following to 1 to perform touch display
   //   remapping functions, 0 to disable. Use DBG_TOUCH to determine which
   //   remapping modes should be enabled for your display
-  // - Please refer to "docs/GUIslice_config_guide.xlsx" for detailed examples
-  // - NOTE: Both settings, GLSC_TOUCH_ROTATE and SWAP / FLIP are applied, 
-  //         try to set _SWAP_XY and _FLIP_X/Y to 0 and only use GLSC_TOUCH_ROTATE
+  // - Please refer to the wiki for details:
+  //   https://github.com/ImpulseAdventure/GUIslice/wiki/Configure-Touch-Support
   #define ADATOUCH_SWAP_XY  0
   #define ADATOUCH_FLIP_X   0
   #define ADATOUCH_FLIP_Y   0
@@ -410,15 +422,25 @@ extern "C" {
   // Error reporting
   // - Set DEBUG_ERR to 1 to enable error reporting via the Serial connection
   // - Enabling DEBUG_ERR increases FLASH memory consumption which may be
-  //   limited on the baseline Arduino (ATmega328P) devices.
+  //   limited on the baseline Arduino (ATmega328P) devices. Therefore it
+  //   is recommended to disable DEBUG_ERR (set to 0) on baseline Arduino
+  //   once initial device operation confirmed to work in examples ex01 and ex02.
+  //   
   #if defined(__AVR__)
-    #define DEBUG_ERR               0   // Debugging disabled by default on low-mem Arduino
+    #define DEBUG_ERR               1   // Debugging enabled by default
   #else
     // For all other devices, DEBUG_ERR is enabled by default.
     // Since this mode increases FLASH memory considerably, it may be
     // necessary to disable this feature.
     #define DEBUG_ERR               1   // Debugging enabled by default
   #endif
+
+  // Debug initialization message
+  // - By default, GUIslice outputs a message in DEBUG_ERR mode
+  //   to indicate the initialization status, even during success.
+  // - To disable the messages during successful initialization,
+  //   uncomment the following line.
+  //#define INIT_MSG_DISABLE
 
 
   // Enable of optional features

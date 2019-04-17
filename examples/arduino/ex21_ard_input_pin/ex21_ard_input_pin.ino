@@ -19,8 +19,12 @@
 //
 
 #include "GUIslice.h"
-#include "GUIslice_ex.h"
 #include "GUIslice_drv.h"
+
+// Include any extended elements
+#include "elem/XCheckbox.h"
+#include "elem/XGauge.h"
+#include "elem/XSlider.h"
 
 #include <Adafruit_GFX.h>
 
@@ -42,6 +46,10 @@ EasyButton btn_prev(PIN_PREV, 35, true, true);
 EasyButton btn_sel( PIN_SEL,  35, true, true);
 EasyButton btn_next(PIN_NEXT, 35, true, true);
 
+// Ensure config settings are correct for the sketch
+#if !defined(DRV_TOUCH_INPUT) || !(GSLC_FEATURE_INPUT)
+  #warning "This sketch requires config: #define DRV_TOUCH_INPUT, #define GSLC_FEATURE_INPUT 1"
+#endif
 
 // Defines for resources
 

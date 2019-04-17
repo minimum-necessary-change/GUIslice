@@ -10,7 +10,7 @@
 //
 // The MIT License
 //
-// Copyright 2018 Calvin Hass
+// Copyright 2016-2019 Calvin Hass
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -162,9 +162,29 @@ bool gslc_DrvInit(gslc_tsGui* pGui);
 void gslc_DrvDestruct(gslc_tsGui* pGui);
 
 
+///
+/// Get the display driver name
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return String containing driver name
+///
+const char* gslc_DrvGetNameDisp(gslc_tsGui* pGui);
+
+
+///
+/// Get the touch driver name
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return String containing driver name
+///
+const char* gslc_DrvGetNameTouch(gslc_tsGui* pGui);
+
 // -----------------------------------------------------------------------
 // Image/surface handling Functions
 // -----------------------------------------------------------------------
+
 
 ///
 /// Load a bitmap (*.bmp) and create a new image resource.
@@ -178,6 +198,7 @@ void gslc_DrvDestruct(gslc_tsGui* pGui);
 ///
 void* gslc_DrvLoadImage(gslc_tsGui* pGui,gslc_tsImgRef sImgRef);
 
+
 ///
 /// Configure the background to use a bitmap image
 /// - The background is used when redrawing the entire page
@@ -188,7 +209,6 @@ void* gslc_DrvLoadImage(gslc_tsGui* pGui,gslc_tsImgRef sImgRef);
 /// \return true if success, false if fail
 ///
 bool gslc_DrvSetBkgndImage(gslc_tsGui* pGui,gslc_tsImgRef sImgRef);
-
 
 ///
 /// Configure the background to use a solid color
@@ -201,7 +221,6 @@ bool gslc_DrvSetBkgndImage(gslc_tsGui* pGui,gslc_tsImgRef sImgRef);
 ///
 bool gslc_DrvSetBkgndColor(gslc_tsGui* pGui,gslc_tsColor nCol);
 
-
 ///
 /// Set an element's normal-state image
 ///
@@ -212,7 +231,6 @@ bool gslc_DrvSetBkgndColor(gslc_tsGui* pGui,gslc_tsColor nCol);
 /// \return true if success, false if error
 ///
 bool gslc_DrvSetElemImageNorm(gslc_tsGui* pGui,gslc_tsElem* pElem,gslc_tsImgRef sImgRef);
-
 
 ///
 /// Set an element's glow-state image
@@ -263,7 +281,6 @@ bool gslc_DrvSetClipRect(gslc_tsGui* pGui,gslc_tsRect* pRect);
 ///
 const void* gslc_DrvFontAdd(gslc_teFontRefType eFontRefType,const void* pvFontRef,uint16_t nFontSz);
 
-
 ///
 /// Release all fonts defined in the GUI
 ///
@@ -306,8 +323,7 @@ bool gslc_DrvGetTxtSize(gslc_tsGui* pGui,gslc_tsFont* pFont,const char* pStr,gsl
 ///
 /// \return true if success, false if failure
 ///
-bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt, gslc_tsColor colBg);
-
+bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt,gslc_tsColor colBg);
 
 
 // -----------------------------------------------------------------------
@@ -392,6 +408,12 @@ bool gslc_DrvDrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol);
 bool gslc_DrvDrawLine(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,int16_t nY1,gslc_tsColor nCol);
 
 
+// TODO: Add DrvDrawFrameCircle()
+// TODO: Add DrvDrawFillCircle()
+// TODO: Add DrvDrawFrameTriangle()
+// TODO: Add DrvDrawFillTriangle()
+
+
 ///
 /// Copy all of source image to destination screen at specified coordinate
 ///
@@ -403,6 +425,10 @@ bool gslc_DrvDrawLine(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,int16
 /// \return true if success, false if fail
 ///
 bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRef sImgRef);
+
+
+// TODO: Add DrvDrawMonoFromMem()
+// TODO: Add DrvDrawBmp24FromMem()
 
 
 ///
@@ -426,11 +452,27 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui);
 /// \param[out] pnX:         Ptr to X coordinate of last touch event
 /// \param[out] pnY:         Ptr to Y coordinate of last touch event
 /// \param[out] pnPress:     Ptr to Pressure level of last touch event (0 for none, 1 for touch)
+/// \param[out] peInputEvent Indication of event type
+/// \param[out] pnInputVal   Additional data for event type
 ///
 /// \return true if an event was detected or false otherwise
-/// \todo Doc
 ///
 bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal);
+
+
+// -----------------------------------------------------------------------
+// Dynamic Screen rotation and Touch axes swap/flip functions
+// -----------------------------------------------------------------------
+
+///
+/// Change rotation, automatically adapt touchscreen axes swap/flip
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  nRotation:   Screen Rotation value (0, 1, 2 or 3)
+///
+/// \return true if successful
+///
+bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation);
 
 
 // =======================================================================
@@ -629,9 +671,10 @@ bool gslc_TDrvInitTouch(gslc_tsGui* pGui,const char* acDev);
 /// \param[out] pnX:         Ptr to X coordinate of last touch event
 /// \param[out] pnY:         Ptr to Y coordinate of last touch event
 /// \param[out] pnPress:     Ptr to Pressure level of last touch event (0 for none, >0 for touch)
+/// \param[out] peInputEvent Indication of event type
+/// \param[out] pnInputVal   Additional data for event type
 ///
 /// \return non-zero if an event was detected or 0 otherwise
-/// \todo Doc
 ///
 bool gslc_TDrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pnPress, gslc_teInputRawEvent* peInputEvent, int16_t* pnInputVal);
 

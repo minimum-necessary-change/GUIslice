@@ -4,11 +4,16 @@ Please refer to the wiki page for installation and usage details:
 
 [GUIslice Builder - Documentation](https://github.com/ImpulseAdventure/GUIslice/wiki/GUIslice-Builder)
 
-### Builder Contents ###
+### Builder Contents
 Note that the Builder executables are attached to the latest [Release Notes](https://github.com/ImpulseAdventure/GUIslice/releases):
-- [Builder_user_guide.pdf](https://github.com/ImpulseAdventure/GUIslice/releases/download/v0.10.4/Builder_user_guide.pdf) Builder User Guide (in PDF format)
-- [builder-win64-0.10.4-beta6.zip](https://github.com/ImpulseAdventure/GUIslice/releases/download/v0.10.4/builder-win64-0.10.4-beta6.zip) Builder Executable (in Windows ZIP format)
-- [builder-linux64-0.10.4-beta5.tar.gz](https://github.com/ImpulseAdventure/GUIslice/releases/download/v0.10.4/builder-linux64-0.10.4-beta5.tar.gz) Builder Executable (in LINUX tar gzip format)
+- `Builder_user_guide.pdf`: Builder User Guide (in PDF format)
+- `builder-win-x.y.z.zip`: Builder Executable (in Windows ZIP format)
+- `builder-linux-x.y.z.tar.gz`: Builder Executable (in LINUX tar gzip format)
+- `builder-osx-x.y.z.zip` Builder Executable (in Mac OS/X zip format)
+
+### Builder Source Code
+The Builder source code is located in this directory (`/builder`)
+- Build instructions can be found in `BUILD.txt`
 
 ### Brief Overview
 The GUIslice Builder is a standalone desktop application that is designed to help generate layouts for GUIslice.

@@ -7,7 +7,7 @@
 //
 // The MIT License
 //
-// Copyright 2018 Calvin Hass
+// Copyright 2016-2019 Calvin Hass
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -53,6 +53,10 @@ extern "C" {
 #endif // __cplusplus
 
 
+  // Define driver naming
+  const char* m_acDrvDisp = "M5STACK";
+  const char* m_acDrvTouch = "M5STACK(NONE)";
+
 
 // ------------------------------------------------------------------------
 // Use default pin settings as defined in M5Stack/src/utility/Config.h
@@ -78,13 +82,15 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
   if (pGui->pvDriver) {
     gslc_tsDriver*  pDriver = (gslc_tsDriver*)(pGui->pvDriver);
 
-    pDriver->nColRawBkgnd = gslc_DrvAdaptColorToRaw(GSLC_COL_BLACK);
+    pDriver->nColBkgnd = GSLC_COL_BLACK;
 
     // These displays can accept partial redraw as they retain the last
     // image in the controller graphics RAM
     pGui->bRedrawPartialEn = true;
 
     m_disp.init();
+	
+	// TODO: Replace the following with DrvRotate()
     m_disp.setRotation( pGui->nRotation );
     pGui->nDispW = m_disp.width();
     pGui->nDispH = m_disp.height();
@@ -104,6 +110,17 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
 void gslc_DrvDestruct(gslc_tsGui* pGui)
 {
 }
+
+const char* gslc_DrvGetNameDisp(gslc_tsGui* pGui)
+{
+  return m_acDrvDisp;
+}
+
+const char* gslc_DrvGetNameTouch(gslc_tsGui* pGui)
+{
+  return m_acDrvTouch;
+}
+
 
 // -----------------------------------------------------------------------
 // Image/surface handling Functions
@@ -154,7 +171,7 @@ bool gslc_DrvSetBkgndColor(gslc_tsGui* pGui,gslc_tsColor nCol)
 {
   if (pGui->pvDriver) {
     gslc_tsDriver*  pDriver = (gslc_tsDriver*)(pGui->pvDriver);
-    pDriver->nColRawBkgnd = gslc_DrvAdaptColorToRaw(nCol);
+    pDriver->nColBkgnd = nCol;
   }
   return true;
 }
@@ -196,7 +213,7 @@ bool gslc_DrvSetClipRect(gslc_tsGui* pGui,gslc_tsRect* pRect)
   }
 
   // TODO: For ILI9341, perhaps we can leverage m_disp.setAddrWindow(x0, y0, x1, y1)?
-  return false;
+  return true;
 }
 
 
@@ -254,6 +271,7 @@ bool gslc_DrvDrawTxtAlign(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,i
 {
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(colTxt);
   uint16_t nTxtScale = pFont->nSize;
+  // TODO: Support SMOOTH_FONT?
   m_disp.setTextColor(nColRaw);
   // TFT_eSPI font API differs from Adafruit-GFX's setFont() API
   if (pFont->pvFont == NULL) {
@@ -298,7 +316,7 @@ bool gslc_DrvDrawTxtAlign(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,i
 //       DrvDrawTxtAlign() is used instead, which will depend on the datum
 //       adjustment code within TFT_eSPI. This mode of operation is
 //       selected by default in GUIslice_drv_tft_espi.h by setting
-//       DRV_OVERRIDE_TXT_ALGIN to 1.
+//       DRV_OVERRIDE_TXT_ALIGN to 1.
 
 // This method is not recommended for use with TFT_eSPI. DrvDrawTxtAlign()
 // should be used instead.
@@ -306,9 +324,13 @@ bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* p
 {
   uint16_t nTxtScale = pFont->nSize;
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(colTxt);
+  // TODO: Support SMOOTH_FONT?
   m_disp.setTextColor(nColRaw);
   // m_disp.setCursor(nTxtX,nTxtY);
   m_disp.setTextSize(nTxtScale);
+
+  // Default to top-left datum
+  m_disp.setTextDatum(TL_DATUM);
 
   if ((eTxtFlags & GSLC_TXT_MEM) == GSLC_TXT_MEM_RAM) {
     // String in SRAM; can access buffer directly
@@ -377,14 +399,39 @@ bool gslc_DrvDrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 
 bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 {
+  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
 #if (GSLC_CLIP_EN)
   // Perform clipping
+  // - TODO: Optimize the following, perhaps with new ClipLineHV()
   gslc_tsDriver* pDriver = (gslc_tsDriver*)(pGui->pvDriver);
-  if (!gslc_ClipRect(&pDriver->rClipRect,&rRect)) { return true; }
-#endif
-
-  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
+  int16_t nX0, nY0, nX1, nY1;
+  // Top
+  nX0 = rRect.x;
+  nY0 = rRect.y;
+  nX1 = rRect.x + rRect.w - 1;
+  nY1 = nY0;
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+  // Bottom
+  nX0 = rRect.x;
+  nY0 = rRect.y + rRect.h - 1;
+  nX1 = rRect.x + rRect.w - 1;
+  nY1 = nY0;
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+  // Left
+  nX0 = rRect.x;
+  nY0 = rRect.y;
+  nX1 = nX0;
+  nY1 = rRect.y + rRect.h - 1;
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+  // Right
+  nX0 = rRect.x + rRect.w - 1;
+  nY0 = rRect.y;
+  nX1 = nX0;
+  nY1 = rRect.y + rRect.h - 1;
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+#else
   m_disp.drawRect(rRect.x,rRect.y,rRect.w,rRect.h,nColRaw);
+#endif
   return true;
 }
 
@@ -508,6 +555,24 @@ void gslc_DrvDrawMonoFromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,
 }
 // ----- REFERENCE CODE end
 
+void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,const unsigned char* pBitmap,bool bProgMem)
+{
+  const int16_t* pImage = (const int16_t*)pBitmap;
+  int16_t h = *(pImage++);
+  int16_t w = *(pImage++);
+  int row, col;
+  for (row=0; row<h; row++) { // For each scanline...
+    for (col=0; col<w; col++) { // For each pixel...
+      if (bProgMem) {
+        //To read from Flash Memory, pgm_read_XXX is required.
+        //Since image is stored as uint16_t, pgm_read_word is used as it uses 16bit address
+        m_disp.drawPixel(nDstX+col, nDstY+row, pgm_read_word(pImage++));
+      } else {
+        m_disp.drawPixel(nDstX+col, nDstY+row, *(pImage++));
+      }
+    } // end pixel
+  }
+}
 
 #if (GSLC_SD_EN)
 // ----- REFERENCE CODE begin
@@ -665,6 +730,13 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
 
 bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRef sImgRef)
 {
+  #if defined(DBG_DRIVER)
+  char addr[6];
+  GSLC_DEBUG_PRINT("DBG: DrvDrawImage() with ImgBuf address=","");
+  sprintf(addr,"%04X",sImgRef.pImgBuf);
+  GSLC_DEBUG_PRINT("%s\n",addr);
+  #endif
+
   // GUIslice adapter library for Adafruit-GFX does not pre-load
   // image data into memory before calling DrvDrawImage(), so
   // we to handle the loading now (when rendering).
@@ -680,6 +752,10 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
       // - Dimensions and output color are defined in arrray header
       gslc_DrvDrawMonoFromMem(pGui,nDstX,nDstY,sImgRef.pImgBuf,false);
       return true;
+    } else if ((sImgRef.eImgFlags & GSLC_IMGREF_FMT) == GSLC_IMGREF_FMT_BMP24) {
+      // 24-bit Bitmap in ram
+      gslc_DrvDrawBmp24FromMem(pGui,nDstX,nDstY,sImgRef.pImgBuf,false);
+      return true;
     } else {
       return false; // TODO: not yet supported
     }
@@ -689,8 +765,13 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
     //       but check (GSLC_USE_PROGMEM) first
     if ((sImgRef.eImgFlags & GSLC_IMGREF_FMT) == GSLC_IMGREF_FMT_RAW1) {
       // Draw a monochrome bitmap from program memory
-      // - Dimensions and output color are defined in arrray header
+      // - Dimensions and output color are defined in array header
       gslc_DrvDrawMonoFromMem(pGui,nDstX,nDstY,sImgRef.pImgBuf,true);
+      return true;
+    } else if ((sImgRef.eImgFlags & GSLC_IMGREF_FMT) == GSLC_IMGREF_FMT_BMP24) {
+      // 24-bit Bitmap in flash
+	  // FIXME: Should we be passing "true" as last param?
+      gslc_DrvDrawBmp24FromMem(pGui,nDstX,nDstY,sImgRef.pImgBuf,false);
       return true;
     } else {
       return false; // TODO: not yet supported
@@ -714,6 +795,7 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
 
   } else {
     // Unsupported source
+    GSLC_DEBUG_PRINT("DBG: DrvDrawImage() unsupported source eImgFlags=%d\n", sImgRef.eImgFlags);
     return false;
   }
 }
@@ -730,8 +812,14 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui)
       // TODO: Create a new eImgFlags enum to signal that the
       //       background should be a flat color instead of
       //       an image.
-      uint16_t nColRaw = pDriver->nColRawBkgnd;
-      m_disp.fillScreen(nColRaw);
+
+      // NOTE: We don't call m_disp.fillScreen() here as
+      //       that API doesn't support clipping. Since
+      //       we may be redrawing the page with a clipping
+      //       region enabled, it is important that we don't
+      //       redraw the entire screen.
+      gslc_tsRect rRect = (gslc_tsRect) { 0, 0, pGui->nDispW, pGui->nDispH };
+      gslc_DrvDrawFillRect(pGui, rRect, pDriver->nColBkgnd);
     } else {
       // An image should be loaded
       // TODO: For now, re-use the DrvDrawImage(). Later, consider
@@ -742,6 +830,7 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui)
     }
   }
 }
+
 
 // -----------------------------------------------------------------------
 // Touch Functions (via display driver)
@@ -820,68 +909,60 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
 // Dynamic Screen rotation and Touch axes swap/flip functions
 // -----------------------------------------------------------------------
 
-///
-/// Change rotation and axes swap/flip
-///
-/// \param[in]  pGui:        Pointer to GUI
-/// \param[in]  nRotation:   Screen Rotation value (0, 1, 2 or 3)
-/// \param[in]  nSwapXY:     Touchscreen Swap X/Y axes
-/// \param[in]  nFlipX:      Touchscreen Flip X axis
-/// \param[in]  nFlipY:      Touchscreen Flip Y axis
-///
-/// \return true if successful
-///
-bool gslc_DrvRotateSwapFlip(gslc_tsGui* pGui, uint8_t nRotation, uint8_t nSwapXY, uint8_t nFlipX, uint8_t nFlipY )
-{
-    bool redraw     = pGui->nRotation != nRotation;
-    bool swapDispay = (nRotation ^ pGui->nRotation) & 0x01;
-    pGui->nRotation = nRotation;
-    pGui->nSwapXY   = nSwapXY;
-    pGui->nFlipX    = nFlipX;
-    pGui->nFlipY    = nFlipY;
 
-    m_disp.setRotation( pGui->nRotation );
-
-    // Redraw the current page if rotation value changed
-    if( redraw ) {
-        gslc_PageRedrawSet( pGui, true );
-        gslc_PageRedrawGo( pGui );
-    }
-
-    // change between portrait <=> landscape
-    if( swapDispay ) {
-        // exchange pGui->nDispH <=> pGui->nDispW
-        uint16_t w = pGui->nDispW;
-        pGui->nDispW = pGui->nDispH;
-        pGui->nDispH = w;
-
-        // new defaults for clipping region
-        gslc_tsRect rClipRect = {0,0,pGui->nDispW,pGui->nDispH};
-        gslc_DrvSetClipRect(pGui,&rClipRect);
-    }
-
-    return( true );
-}
-
-
-///
-/// Change rotation, automatically adapt touchscreen axes swap/flip based on nRotation vs GLSC_TOUCH_ROTATE
-///
-/// The function assumes that the touchscreen settings for swap and flip in GUIslice_config_ard.h
-/// are valid for the rotation defined in GUIslice_config_ard.h
-///
-/// \param[in]  pGui:        Pointer to GUI
-/// \param[in]  nRotation:   Screen Rotation value (0, 1, 2 or 3)
-///
-/// \return true if successful
-///
+/// Change display rotation and any associated touch orientation
 bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
 {
-    uint8_t nSwapXY = ADATOUCH_SWAP_XY ^ TOUCH_ROTATION_SWAPXY(GSLC_TOUCH_ROTATE - GSLC_ROTATE + nRotation);
-    uint8_t nFlipX  = ADATOUCH_FLIP_X  ^ TOUCH_ROTATION_FLIPX (GSLC_TOUCH_ROTATE - GSLC_ROTATE + nRotation);
-    uint8_t nFlipY  = ADATOUCH_FLIP_Y  ^ TOUCH_ROTATION_FLIPY (GSLC_TOUCH_ROTATE - GSLC_ROTATE + nRotation);
-    //Serial.print("s,x,y=");Serial.print(nSwapXY);Serial.print(',');Serial.print(nFlipX);Serial.print(',');Serial.println(nFlipY);;
-    return gslc_DrvRotateSwapFlip(pGui, nRotation, nSwapXY, nFlipX, nFlipY);
+  bool bChange = true;
+
+  // Determine if the new orientation has swapped axes
+  // versus the native orientation (0)
+  bool bSwap = false;
+  if ((nRotation == 1) || (nRotation == 3)) {
+    bSwap = true;
+  }
+
+  // Did the orientation change?
+  if (nRotation == pGui->nRotation) {
+    // Orientation did not change -- indicate this by returning
+    // false so that we can avoid a redraw
+    bChange = false;
+  }
+
+  // Update the GUI rotation member
+  pGui->nRotation = nRotation;
+
+  // Inform the display to adjust the orientation and
+  // update the saved display dimensions
+
+  // DRV_DISP_M5STACK
+  // Capture display dimensions in native orientation
+  m_disp.setRotation(0);
+  pGui->nDisp0W = m_disp.width();
+  pGui->nDisp0H = m_disp.height();
+  // Capture display dimensions in selected orientation
+  m_disp.setRotation(pGui->nRotation);
+  pGui->nDispW = m_disp.width();
+  pGui->nDispH = m_disp.height();
+
+  // Update the clipping region
+  gslc_tsRect rClipRect = {0,0,pGui->nDispW,pGui->nDispH};
+  gslc_DrvSetClipRect(pGui,&rClipRect);
+
+  // Now update the touch remapping
+  #if !defined(DRV_TOUCH_NONE)
+    pGui->nSwapXY = TOUCH_ROTATION_SWAPXY(pGui->nRotation);
+    pGui->nFlipX = TOUCH_ROTATION_FLIPX(pGui->nRotation);
+    pGui->nFlipY = TOUCH_ROTATION_FLIPY(pGui->nRotation);
+  #endif // !DRV_TOUCH_NONE
+
+  // Mark the current page ask requiring redraw
+  // if the rotation value changed
+  if (bChange) {
+    gslc_PageRedrawSet( pGui, true );
+  }
+
+  return true;
 }
 
 

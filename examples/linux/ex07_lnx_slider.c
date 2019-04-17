@@ -7,12 +7,14 @@
 //     Sliders with dynamic color control and position callback
 //
 #include "GUIslice.h"
-#include "GUIslice_ex.h"
 #include "GUIslice_drv.h"
+
+// Include any extended elements
+#include "elem/XSlider.h"
 
 
 // Defines for resources
-#define FONT1 "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
+#define FONT1 "/usr/share/fonts/truetype/noto/NotoMono-Regular.ttf"
 
 // Enumerations for pages, elements, fonts, images
 enum {E_PG_MAIN};

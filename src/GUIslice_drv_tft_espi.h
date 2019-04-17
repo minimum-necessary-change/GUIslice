@@ -10,7 +10,7 @@
 //
 // The MIT License
 //
-// Copyright 2018 Calvin Hass
+// Copyright 2016-2019 Calvin Hass
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -49,6 +49,33 @@ extern "C" {
 #include <stdio.h>
 
 
+// Determine characteristics for configured touch driver
+// - DRV_TOUCH_TYPE_EXTERNAL: TDrv* external touch APIs are enabled
+// - DRV_TOUCH_TYPE_RES:      Resistive overlay
+// - DRV_TOUCH_TYPE_CAP:      Capacitive overlay
+// - DRV_TOUCH_TYPE_ANALOG:   Analog input
+#if defined(DRV_TOUCH_ADA_STMPE610)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+  #define DRV_TOUCH_TYPE_RES         // Resistive
+#elif defined(DRV_TOUCH_ADA_FT6206)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+  #define DRV_TOUCH_TYPE_CAP         // Capacitive
+#elif defined(DRV_TOUCH_ADA_SIMPLE)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+  #define DRV_TOUCH_TYPE_RES         // Resistive
+  #define DRV_TOUCH_TYPE_ANALOG      // Analog
+#elif defined(DRV_TOUCH_XPT2046_STM)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+  #define DRV_TOUCH_TYPE_RES         // Resistive
+#elif defined(DRV_TOUCH_XPT2046_PS)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+  #define DRV_TOUCH_TYPE_RES         // Resistive
+#elif defined(DRV_TOUCH_INPUT)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+#elif defined(DRV_TOUCH_HANDLER)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+#elif defined(DRV_TOUCH_NONE)
+#endif // DRV_TOUCH_*
 
 
 // =======================================================================
@@ -78,7 +105,7 @@ extern "C" {
 // Driver-specific members
 // =======================================================================
 typedef struct {
-  uint16_t      nColRawBkgnd;   ///< Background color (if not image-based)
+  gslc_tsColor  nColBkgnd;      ///< Background color (if not image-based)
 
   gslc_tsRect   rClipRect;      ///< Clipping rectangle
 
@@ -139,6 +166,25 @@ bool gslc_DrvInitTs(gslc_tsGui* pGui,const char* acDev);
 ///
 void gslc_DrvDestruct(gslc_tsGui* pGui);
 
+
+///
+/// Get the display driver name
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return String containing driver name
+///
+const char* gslc_DrvGetNameDisp(gslc_tsGui* pGui);
+
+
+///
+/// Get the touch driver name
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return String containing driver name
+///
+const char* gslc_DrvGetNameTouch(gslc_tsGui* pGui);
 
 // -----------------------------------------------------------------------
 // Image/surface handling Functions
@@ -219,7 +265,7 @@ void gslc_DrvImageDestruct(void* pvImg);
 /// \param[in]  pGui:          Pointer to GUI
 /// \param[in]  pRect:         Rectangular region to constrain edits
 ///
-/// \return none
+/// \return true if success, false if error
 ///
 bool gslc_DrvSetClipRect(gslc_tsGui* pGui,gslc_tsRect* pRect);
 
@@ -240,7 +286,6 @@ bool gslc_DrvSetClipRect(gslc_tsGui* pGui,gslc_tsRect* pRect);
 /// \return Void ptr to driver-specific font if load was successful, NULL otherwise
 ///
 const void* gslc_DrvFontAdd(gslc_teFontRefType eFontRefType,const void* pvFontRef,uint16_t nFontSz);
-
 
 ///
 /// Release all fonts defined in the GUI
@@ -284,7 +329,7 @@ bool gslc_DrvGetTxtSize(gslc_tsGui* pGui,gslc_tsFont* pFont,const char* pStr,gsl
 ///
 /// \return true if success, false if failure
 ///
-bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt, gslc_tsColor colBg);
+bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt,gslc_tsColor colBg);
 
 ///
 /// Draw a text string in a bounding box using the specified alignment
@@ -304,7 +349,7 @@ bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* p
 /// \return true if success, false if failure
 ///
 bool gslc_DrvDrawTxtAlign(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,int16_t nY1,int8_t eTxtAlign,
-        gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt, gslc_tsColor colBg);
+        gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt,gslc_tsColor colBg);
 
 // -----------------------------------------------------------------------
 // Screen Management Functions
@@ -480,6 +525,23 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
 ///
 void gslc_DrvDrawMonoFromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY, const unsigned char *pBitmap,bool bProgMem);
 
+///
+/// Draw a color 24-bit depth bitmap from a memory array
+/// - Note that users must convert images from their native
+///   format (eg. BMP, PNG, etc.) into a C array. Please
+///   refer to the following guide for details:
+///   https://github.com/ImpulseAdventure/GUIslice/wiki/Display-Images-from-FLASH
+/// - The converted file (c array) can then be included in the sketch.
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  nDstX:       X coord for copy
+/// \param[in]  nDstY:       Y coord for copy
+/// \param[in]  pBitmap:     Pointer to bitmap buffer
+/// \param[in]  bProgMem:    Bitmap is stored in Flash if true, RAM otherwise
+///
+/// \return none
+///
+void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,const unsigned char* pBitmap,bool bProgMem);
 
 ///
 /// Copy the background image to destination screen
@@ -517,9 +579,10 @@ bool gslc_DrvInitTouch(gslc_tsGui* pGui,const char* acDev);
 /// \param[out] pnX:         Ptr to X coordinate of last touch event
 /// \param[out] pnY:         Ptr to Y coordinate of last touch event
 /// \param[out] pnPress:     Ptr to Pressure level of last touch event (0 for none, 1 for touch)
+/// \param[out] peInputEvent Indication of event type
+/// \param[out] pnInputVal   Additional data for event type
 ///
 /// \return true if an event was detected or false otherwise
-/// \todo Doc
 ///
 bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal);
 
@@ -530,7 +593,13 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
 // Touch Functions (if using external touch driver library)
 // -----------------------------------------------------------------------
 
-#if defined(DRV_TOUCH_ADA_STMPE610) || defined(DRV_TOUCH_ADA_FT6206) || defined(DRV_TOUCH_ADA_SIMPLE) || defined(DRV_TOUCH_XPT2046)
+// Check for deprecated config option
+// - This check will be removed in future releases
+#if defined(DRV_TOUCH_XPT2046)
+  #error "NOTE: DRV_TOUCH_XPT2046 has been renamed to DRV_TOUCH_XPT2046_STM. Please update your config."
+#endif
+
+#if defined(DRV_TOUCH_TYPE_EXTERNAL)
 
 ///
 /// Perform any touchscreen-specific initialization
@@ -551,9 +620,10 @@ bool gslc_TDrvInitTouch(gslc_tsGui* pGui,const char* acDev);
 /// \param[out] pnX:         Ptr to X coordinate of last touch event
 /// \param[out] pnY:         Ptr to Y coordinate of last touch event
 /// \param[out] pnPress:     Ptr to Pressure level of last touch event (0 for none, 1 for touch)
+/// \param[out] peInputEvent Indication of event type
+/// \param[out] pnInputVal   Additional data for event type
 ///
 /// \return true if an event was detected or false otherwise
-/// \todo Doc
 ///
 bool gslc_TDrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pnPress, gslc_teInputRawEvent* peInputEvent, int16_t* pnInputVal);
 
@@ -565,24 +635,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* p
 // -----------------------------------------------------------------------
 
 ///
-/// Change rotation and axes swap/flip
-///
-/// \param[in]  pGui:        Pointer to GUI
-/// \param[in]  nRotation:   Screen Rotation value (0, 1, 2 or 3)
-/// \param[in]  nSwapXY:     Touchscreen Swap X/Y axes
-/// \param[in]  nFlipX:      Touchscreen Flip X axis
-/// \param[in]  nFlipY:      Touchscreen Flip Y axis
-///
-/// \return true if successful
-///
-bool gslc_DrvRotateSwapFlip(gslc_tsGui* pGui, uint8_t nRotation, uint8_t nSwapXY, uint8_t nFlipX, uint8_t nFlipY );
-
-
-///
 /// Change rotation, automatically adapt touchscreen axes swap/flip
-///
-/// The function assumes that the touchscreen settings for swap and flip in GUIslice_config_ard.h
-/// are valid for the rotation defined in GUIslice_config_ard.h
 ///
 /// \param[in]  pGui:        Pointer to GUI
 /// \param[in]  nRotation:   Screen Rotation value (0, 1, 2 or 3)
