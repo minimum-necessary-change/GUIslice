@@ -514,6 +514,16 @@ bool gslc_DrvDrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
   return true;
 }
 
+bool gslc_DrvDrawFillRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadius,gslc_tsColor nCol)
+{
+  // TODO: Support GSLC_CLIP_EN
+  // - Would need to determine how to clip the rounded corners
+  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
+  m_disp.fillRoundRect(rRect.x,rRect.y,rRect.w,rRect.h,nRadius,nColRaw);
+  return true;
+}
+
+
 bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 {
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
@@ -551,6 +561,16 @@ bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 #endif
   return true;
 }
+
+bool gslc_DrvDrawFrameRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadius,gslc_tsColor nCol)
+{
+  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
+  // TODO: Support GSLC_CLIP_EN
+  // - Would need to determine how to clip the rounded corners
+  m_disp.drawRoundRect(rRect.x,rRect.y,rRect.w,rRect.h,nRadius,nColRaw);
+  return true;
+}
+
 
 
 bool gslc_DrvDrawLine(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,int16_t nY1,gslc_tsColor nCol)
@@ -733,6 +753,7 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
   int      w, h, row, col;
   uint8_t  r, g, b;
   uint32_t pos = 0, startTime = millis();
+  (void)startTime; // Unused
 
   if((x >= pGui->nDispW) || (y >= pGui->nDispH)) return;
 
@@ -749,12 +770,14 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
   // Parse BMP header
   if(gslc_DrvRead16SD(bmpFile) == 0x4D42) { // BMP signature
     uint32_t nFileSize = gslc_DrvRead32SD(bmpFile);
+    (void)nFileSize; // Unused
     //Serial.print("File size: "); Serial.println(nFileSize);
     (void)gslc_DrvRead32SD(bmpFile); // Read & ignore creator bytes
     bmpImageoffset = gslc_DrvRead32SD(bmpFile); // Start of image data
     //Serial.print("Image Offset: "); Serial.println(bmpImageoffset, DEC);
     // Read DIB header
     uint32_t nHdrSize = gslc_DrvRead32SD(bmpFile);
+    (void)nHdrSize; // Unused
     //Serial.print("Header size: "); Serial.println(nHdrSize);
     bmpWidth  = gslc_DrvRead32SD(bmpFile);
     bmpHeight = gslc_DrvRead32SD(bmpFile);
@@ -942,7 +965,7 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui)
       //       extending to support different background drawing
       //       capabilities such as stretching and tiling of background
       //       image.
-      gslc_DrvDrawImage(pGui,0,0,pGui->sImgRefBkgnd);
+      gslc_DrvDrawImage(pGui, 0, 0, pGui->sImgRefBkgnd);
     }
   }
 }
@@ -962,18 +985,18 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui)
 
 #if defined(DRV_TOUCH_IN_DISP)
 
-bool gslc_DrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
+bool gslc_DrvInitTouch(gslc_tsGui* pGui, const char* acDev) {
   if (pGui == NULL) {
-    GSLC_DEBUG_PRINT("ERROR: DrvInitTouch(%s) called with NULL ptr\n","");
+    GSLC_DEBUG_PRINT("ERROR: DrvInitTouch(%s) called with NULL ptr\n", "");
     return false;
   }
 
   // Perform any driver-specific touchscreen init here
 
   // Initialize the touch calibration data
-  #if defined(DRV_TOUCH_TFT_ESPI)
+#if defined(DRV_TOUCH_TFT_ESPI)
   m_disp.setTouch(m_anCalData);
-  #endif
+#endif
 
   // NOTE: TFT_eSPI constructor already initializes the touch
   // driver if TOUCH_CS is defined in the TFT_eSPI library's "User_Setup.h"
@@ -982,53 +1005,181 @@ bool gslc_DrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
   return true;
 }
 
-
-bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal)
+bool gslc_DrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pnPress, gslc_teInputRawEvent* peInputEvent, int16_t* pnInputVal)
 {
 
   if ((pGui == NULL) || (pGui->pvDriver == NULL)) {
-    GSLC_DEBUG_PRINT("ERROR: DrvGetTouch(%s) called with NULL ptr\n","");
+    GSLC_DEBUG_PRINT("ERROR: DrvGetTouch(%s) called with NULL ptr\n", "");
     return false;
   }
 
-  // Use TFT_eSPI for touch events
-  uint8_t     bPressed = 0;
-  uint16_t    nX=0;
-  uint16_t    nY=0;
-  int16_t     nOutputX, nOutputY;
+  // Use TFT_eSPI's integrated XPT2046 touch handler
+  // - Note that the TFT_eSPI getTouch() calls are not used here because
+  //   they don't currently support dynamic rotation. Without dynamic rotation
+  //   support, the coordinate transform will not be correct after issuing a
+  //   setRotation() call to the TFT_eSPI display library.
+  // - Therefore, we will instead use the raw XPT2046 readings (from TFT_eSPI)
+  //   and let GUIslice perform the calibration and dynamic rotation.
+  // - Note that these readings will naturally be quite noisy w/o filtering.
+  // - Reference: https://github.com/Bodmer/TFT_eSPI/issues/365
 
-  bPressed = m_disp.getTouch(&nX,&nY);
+  // - TODO: Consider merging this logic with gslc_TDrvGetTouch() and remove
+  //         the special case for DRV_TOUCH_IN_DISP
 
-  // Perform any requested swapping of input axes
-  if( pGui->nSwapXY ) {
-    nOutputX = (int16_t)nY;
-    nOutputY = (int16_t)nX;
+  // As some touch hardware drivers don't appear to return
+  // an indication of "touch released" with a coordinate, we
+  // must detect the release transition here and send the last
+  // known coordinate but with pressure=0. To do this, we are
+  // allocating a static variable to maintain the last touch
+  // coordinate.
+  // TODO: This code can be reworked / simplified
+  static int16_t  m_nLastRawX     = 0;
+  static int16_t  m_nLastRawY     = 0;
+  static uint16_t m_nLastRawPress = 0;
+  static bool     m_bLastTouched  = false;
+
+  bool bValid = false;  // Indicate a touch event to GUIslice core?
+
+  // Define maximum bounds for display in native orientation
+  int nDispOutMaxX,nDispOutMaxY;
+  nDispOutMaxX = pGui->nDisp0W-1;
+  nDispOutMaxY = pGui->nDisp0H-1;
+
+  uint16_t  nRawX,nRawY; //XPT2046 returns values up to 4095
+  uint16_t  nRawPress;   //XPT2046 returns values up to 4095
+
+  // Retrieve the raw touch coordinates from the XPT2046
+  // NOTE: We can't use TFT_eSPI's validTouch() as it is declared private
+  nRawPress = m_disp.getTouchRawZ();
+  m_disp.getTouchRaw(&nRawX, &nRawY);
+
+  if ((nRawPress > ADATOUCH_PRESS_MIN) && (nRawPress < ADATOUCH_PRESS_MAX)) {
+
+    m_nLastRawX = nRawX;
+    m_nLastRawY = nRawY;
+    m_nLastRawPress = nRawPress;
+    m_bLastTouched = true;
+    bValid = true;
   } else {
-    nOutputX = (int16_t)nX;
-    nOutputY = (int16_t)nY;
+    if (!m_bLastTouched) {
+      // Wasn't touched before; do nothing
+    } else {
+      // Touch release
+      // Indicate old coordinate but with pressure=0
+      m_nLastRawPress = 0;
+      m_bLastTouched = false;
+      bValid = true;
+    }
   }
 
-  // Perform any requested output axis flipping
-  if( pGui->nFlipX ) {
-    nOutputX = pGui->nDispW - 1 - nOutputX;
-  }
-  if( pGui->nFlipY ) {
-    nOutputY = pGui->nDispH - 1 - nOutputY;
+  // If an event was detected, signal it back to GUIslice
+  if (bValid) {
+
+    int nRawX,nRawY;
+    int nInputX,nInputY;
+    int nOutputX,nOutputY;
+
+    // Input assignment
+    nRawX = m_nLastRawX;
+    nRawY = m_nLastRawY;
+
+    // Handle any hardware swapping in native orientation
+    // This is done prior to any flip/swap as a result of
+    // rotation away from the native orientation.
+    // In most cases, the following is not used, but there
+    // may be touch modules that have swapped their X&Y convention.
+    if (pGui->bTouchRemapYX) {
+      nRawX = m_nLastRawY;
+      nRawY = m_nLastRawX;
+    }
+
+    nInputX = nRawX;
+    nInputY = nRawY;
+
+    // For resistive displays, perform constraint and scaling
+    #if defined(DRV_TOUCH_TYPE_RES)
+      if (pGui->bTouchRemapEn) {
+        // Perform scaling from input to output
+        // - Calibration done in native orientation (GSLC_ROTATE=0)
+        // - Input to map() is done with raw unswapped X,Y
+        // - map() and constrain() done with native dimensions and
+        //   native calibration
+        // - Swap & Flip done to output of map/constrain according
+        //   to GSLC_ROTATE
+        //
+        #if defined(DBG_TOUCH)
+          GSLC_DEBUG_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+          GSLC_DEBUG_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+        #endif
+        nOutputX = map(nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+        nOutputY = map(nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+        // Perform constraining to OUTPUT boundaries
+        nOutputX = constrain(nOutputX, 0, nDispOutMaxX);
+        nOutputY = constrain(nOutputY, 0, nDispOutMaxY);
+      } else {
+        // No scaling from input to output
+        nOutputX = nInputX;
+        nOutputY = nInputY;
+      }
+    #else
+      // No scaling from input to output
+      nOutputX = nInputX;
+      nOutputY = nInputY;
+    #endif  // DRV_TOUCH_TYPE_RES
+  
+    #ifdef DBG_TOUCH
+    GSLC_DEBUG_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
+    GSLC_DEBUG_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
+      pGui->bTouchRemapEn,pGui->nSwapXY,pGui->nFlipX,pGui->nFlipY);
+    #endif // DBG_TOUCH
+
+    // Perform remapping due to current orientation
+    if (pGui->bTouchRemapEn) {
+      // Perform any requested swapping of input axes
+      if (pGui->nSwapXY) {
+        int16_t nOutputXTmp = nOutputX;
+        nOutputX = nOutputY;
+        nOutputY = nOutputXTmp;
+        // Perform any requested output axis flipping
+        // TODO: Collapse these cases
+        if (pGui->nFlipX) {
+          nOutputX = nDispOutMaxY - nOutputX;
+        }
+        if (pGui->nFlipY) {
+          nOutputY = nDispOutMaxX - nOutputY;
+        }
+      } else {
+        // Perform any requested output axis flipping
+        if (pGui->nFlipX) {
+          nOutputX = nDispOutMaxX - nOutputX;
+        }
+        if (pGui->nFlipY) {
+          nOutputY = nDispOutMaxY - nOutputY;
+        }
+      }
+    }
+
+    // Final assignment
+    *pnX          = nOutputX;
+    *pnY          = nOutputY;
+    *pnPress      = m_nLastRawPress;
+    *peInputEvent = GSLC_INPUT_TOUCH;
+    *pnInputVal   = 0;
+
+    // Print output for debug
+    #ifdef DBG_TOUCH
+    if (bPressed) {
+    GSLC_DEBUG_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
+        m_nLastRawPress,m_nLastRawX,m_nLastRawY,nOutputX,nOutputY);
+    }
+    #endif
+
+    // Return with indication of new value
+    return true;
   }
 
-  // Assign coordinates
-  *pnX = (int16_t)nOutputX;
-  *pnY = (int16_t)nOutputY;
-
-  if (bPressed > 0) {
-    *pnPress = 1;
-  } else {
-    *pnPress = 0;
-  }
-  *peInputEvent = GSLC_INPUT_TOUCH;
-  *pnInputVal   = 0;
-
-  return true;
+  // No new value
+  return false;
 }
 
 #endif // DRV_TOUCH_IN_DISP
@@ -1040,10 +1191,59 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
 
 #if defined(DRV_TOUCH_ADA_SIMPLE)
 
-  // Enable workaround for Adafruit_TouchScreen pressure readings?
-  // - See Issue #96
-  #define FIX_4WIRE // Comment out to disable
+  // --------------------------------------------------------------------------
+  // Enable Adafruit_TouchScreen workarounds
+  // --------------------------------------------------------------------------
 
+  // NOTE: The Adafruit_TouchScreen is not natively compatible with certain
+  //       devices (eg. ESP32) and also doesn't safeguard against pin-sharing
+  //       conflicts. For these and some other issues, the following workarounds
+  //       are optionally enabled.
+
+  // Enable workaround for ambiguity in Adafruit_TouchScreen pressure readings
+  // - See https://github.com/ImpulseAdventure/GUIslice/issues/96
+  #define FIX_4WIRE_Z // Comment out to disable
+
+  // Enable workaround for Adafruit_TouchScreen getPoint() altering
+  // the pin state and not restoring it. Without working around this,
+  // the touch handler may interfere with displays that share pins.
+  #define FIX_4WIRE_PIN_STATE // Comment out to disable
+
+  // For ESP32 devices, a workaround is required for the
+  // Adafruit_TouchScreen since it makes an assumption that
+  // the ADC resolution is 10-bit. This workaround enables the
+  // Adafruit library to operate the same was as for AVR devices.
+  #if defined(ESP32)
+    #define FIX_4WIRE_ADC_10 // Comment out to disable
+  #endif
+
+  // Enable workaround for TFT_eSPI with 8-bit parallel TFTs that share
+  // certain pins (eg. RDX, WRX) with the touch overlay. TFT_eSPI appears
+  // to force the TFT chip select low (permanently) in ESP32_PARALLEL mode
+  // which can cause unexpected TFT corruption during the analog read
+  // process. This workaround wraps the touch reads with a TFT chip-select
+  // disable.
+  // - Note that this workaround assumes that TFT_CS has been defined
+  //   in the TFT_eSPI library.
+  // - TFT_eSPI does not officially support UNO-style parallel shields
+  //   according to https://github.com/Bodmer/TFT_eSPI/issues/345
+  // - This workaround does enable successful operation with some of
+  //   these shields, but it is not guaranteed to work with all.
+  // - By default, this workaround has been disabled
+  //#define FIX_4WIRE_FORCE_CS // Comment out to disable
+
+  // --------------------------------------------------------------------------
+
+  // Disable certain workarounds for Adafruit_TouchScreen in STM32 mode
+  // as we haven't implemented the equivalent pin save/restore code yet.
+  #if defined(ARDUINO_ARCH_STM32) || defined(__STM32F1__)
+    #undef FIX_4WIRE_PIN_STATE
+    #undef FIX_4WIRE_FORCE_CS
+  #endif
+  
+  // --------------------------------------------------------------------------
+
+  #if defined(FIX_4WIRE_PIN_STATE)
   // NOTE: The Adafruit_TouchScreen library alters the state of several
   //       pins during the course of reading the touch coordinates and
   //       pressure. Unfortunately, it does not restore the prior state
@@ -1062,7 +1262,7 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
     bool    bIsHigh;   // Is an output and HIGH?
   };
 
-  /// Return the current pinMOde() for a pin
+  /// Return the current pinMode() for a pin
   int gslc_TDrvGetPinMode(uint8_t nPin)
   {
     if (nPin >= NUM_DIGITAL_PINS) {
@@ -1106,8 +1306,11 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
     if (sPinState.nMode == OUTPUT) digitalWrite(nPin,sPinState.bIsHigh);
   }
 
-#endif // DRV_TOUCH_ADA_SIMPLE
+  #endif // FIX_4WIRE_PIN_STATE
 
+  // --------------------------------------------------------------------------
+
+#endif // DRV_TOUCH_ADA_SIMPLE
 
 
 #if defined(DRV_TOUCH_TYPE_EXTERNAL)
@@ -1121,6 +1324,16 @@ bool gslc_TDrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
     pGui->nTouchCalYMin = ADATOUCH_Y_MIN;
     pGui->nTouchCalYMax = ADATOUCH_Y_MAX;
   #endif // DRV_TOUCH_TYPE_RES
+
+  // Support touch controllers with swapped X & Y
+  #if defined(ADATOUCH_REMAP_YX)
+    // Capture swap setting from config file
+    pGui->bTouchRemapYX = ADATOUCH_REMAP_YX;
+  #else
+    // For backward compatibility with older config files
+    // that have not defined this config option
+    pGui->bTouchRemapYX = false;
+  #endif
 
   #if defined(DRV_TOUCH_ADA_STMPE610)
     #if (ADATOUCH_I2C_HW)
@@ -1147,7 +1360,9 @@ bool gslc_TDrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
       // ADC resolution to 10-bit.
       // References:
       // - https://github.com/adafruit/Adafruit_TouchScreen/issues/15
-      analogReadResolution(10);
+      #if defined(FIX_4WIRE_ADC_10)
+        analogReadResolution(10);
+      #endif // FIX_4WIRE_ADC_10
     #endif
     return true;
   #elif defined(DRV_TOUCH_XPT2046_STM)
@@ -1279,16 +1494,26 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
   uint16_t  nRawX,nRawY;
   int16_t   nRawPress;
 
-  // Saved pin state
-  gslc_tsPinState   sPinStateXP, sPinStateXM, sPinStateYP, sPinStateYM;
+  #if defined(FIX_4WIRE_PIN_STATE)
+    // Saved pin state
+    gslc_tsPinState   sPinStateXP, sPinStateXM, sPinStateYP, sPinStateYM;
 
-  // As Adafruit_TouchScreen polling will alter the pin state and some
-  // of these pins may be shared with the display, we need to save and
-  // then later restore the pin state.
-  gslc_TDrvSavePinState(ADATOUCH_PIN_XP, sPinStateXP);
-  gslc_TDrvSavePinState(ADATOUCH_PIN_XM, sPinStateXM);
-  gslc_TDrvSavePinState(ADATOUCH_PIN_YP, sPinStateYP);
-  gslc_TDrvSavePinState(ADATOUCH_PIN_YM, sPinStateYM);
+    // As Adafruit_TouchScreen polling will alter the pin state and some
+    // of these pins may be shared with the display, we need to save and
+    // then later restore the pin state.
+    gslc_TDrvSavePinState(ADATOUCH_PIN_XP, sPinStateXP);
+    gslc_TDrvSavePinState(ADATOUCH_PIN_XM, sPinStateXM);
+    gslc_TDrvSavePinState(ADATOUCH_PIN_YP, sPinStateYP);
+    gslc_TDrvSavePinState(ADATOUCH_PIN_YM, sPinStateYM);
+
+    #if defined(FIX_4WIRE_FORCE_CS)
+      // Preserve the TFT chip select and deassert it during touchscreen reads
+      gslc_tsPinState sPinStateCS;
+      gslc_TDrvSavePinState(TFT_CS, sPinStateCS);
+      digitalWrite(TFT_CS, HIGH);
+    #endif // FIX_4WIRE_FORCE_CS
+
+  #endif // FIX_4WIRE_PIN_STATE
   
   // Perform the polling of touch coordinate & pressure
   TSPoint p = m_touch.getPoint();
@@ -1315,7 +1540,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
       // Wasn't touched before; do nothing
     } else {
 
-      #if !defined(FIX_4WIRE) // Original behavior without touch pressure workaround
+      #if !defined(FIX_4WIRE_Z) // Original behavior without touch pressure workaround
 
       // Indicate old coordinate but with pressure=0
       m_nLastRawPress = 0;
@@ -1378,19 +1603,27 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
             m_nLastRawPress,m_nLastRawX,m_nLastRawY);
         #endif
       } // nPressCur
-      #endif // FIX_4WIRE
+      #endif // FIX_4WIRE_Z
 
       // TODO: Implement touch debouncing
 
     } // m_bLastTouched
   }
 
-  // Now that we have completed our polling into Adafruit_TouchScreen,
-  // we need to restore the original pin state.
-  gslc_TDrvRestorePinState(ADATOUCH_PIN_XP, sPinStateXP);
-  gslc_TDrvRestorePinState(ADATOUCH_PIN_XM, sPinStateXM);
-  gslc_TDrvRestorePinState(ADATOUCH_PIN_YP, sPinStateYP);
-  gslc_TDrvRestorePinState(ADATOUCH_PIN_YM, sPinStateYM);
+  #if defined(FIX_4WIRE_PIN_STATE)
+    // Now that we have completed our polling into Adafruit_TouchScreen,
+    // we need to restore the original pin state.
+    gslc_TDrvRestorePinState(ADATOUCH_PIN_XP, sPinStateXP);
+    gslc_TDrvRestorePinState(ADATOUCH_PIN_XM, sPinStateXM);
+    gslc_TDrvRestorePinState(ADATOUCH_PIN_YP, sPinStateYP);
+    gslc_TDrvRestorePinState(ADATOUCH_PIN_YM, sPinStateYM);
+
+    #if defined(FIX_4WIRE_FORCE_CS)
+      // Restore TFT chip select
+      gslc_TDrvRestorePinState(TFT_CS, sPinStateCS);
+    #endif // FIX_4WIRE_FORCE_CS
+
+  #endif // FIX_4WIRE_PIN_STATE
 
   // ----------------------------------------------------------------
   #elif defined(DRV_TOUCH_XPT2046_STM)
@@ -1517,6 +1750,16 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
     nRawX = m_nLastRawX;
     nRawY = m_nLastRawY;
 
+    // Handle any hardware swapping in native orientation
+    // This is done prior to any flip/swap as a result of
+    // rotation away from the native orientation.
+    // In most cases, the following is not used, but there
+    // may be touch modules that have swapped their X&Y convention.
+    if (pGui->bTouchRemapYX) {
+      nRawX = m_nLastRawY;
+      nRawY = m_nLastRawX;
+    }
+
     nInputX = nRawX;
     nInputY = nRawY;
 
@@ -1549,7 +1792,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
       // No scaling from input to output
       nOutputX = nInputX;
       nOutputY = nInputY;
-    #endif
+    #endif  // DRV_TOUCH_TYPE_RES
   
     #ifdef DBG_TOUCH
     GSLC_DEBUG_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
@@ -1622,6 +1865,7 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
   if ((nRotation == 1) || (nRotation == 3)) {
     bSwap = true;
   }
+  (void)bSwap; // Unused
 
   // Did the orientation change?
   if (nRotation == pGui->nRotation) {
@@ -1652,6 +1896,7 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
 
   // Now update the touch remapping
   #if !defined(DRV_TOUCH_NONE)
+    // Correct touch mapping according to current rotation mode
     pGui->nSwapXY = TOUCH_ROTATION_SWAPXY(pGui->nRotation);
     pGui->nFlipX = TOUCH_ROTATION_FLIPX(pGui->nRotation);
     pGui->nFlipY = TOUCH_ROTATION_FLIPY(pGui->nRotation);

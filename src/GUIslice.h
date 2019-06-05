@@ -7,7 +7,7 @@
 // - https://www.impulseadventure.com/elec/guislice-gui.html
 // - https://github.com/ImpulseAdventure/GUIslice
 //
-// - Version 0.11.2
+// - Version 0.11.4
 // =======================================================================
 //
 // The MIT License
@@ -176,6 +176,7 @@ typedef enum {
 
 /// Element features type
 #define GSLC_ELEM_FEA_VALID     0x80      ///< Element record is valid
+#define GSLC_ELEM_FEA_ROUND_EN  0x10      ///< Element is drawn with a rounded profile
 #define GSLC_ELEM_FEA_CLICK_EN  0x08      ///< Element accepts touch presses
 #define GSLC_ELEM_FEA_GLOW_EN   0x04      ///< Element supports glowing state
 #define GSLC_ELEM_FEA_FRAME_EN  0x02      ///< Element is drawn with a frame
@@ -291,6 +292,11 @@ typedef enum {
   GSLC_PIN_BTN_D_LONG,      ///< Button D (long press)
   GSLC_PIN_BTN_E,           ///< Button E (short press)
   GSLC_PIN_BTN_E_LONG,      ///< Button E (long press)
+  GSLC_PIN_BTN_UP,          ///< Button Up (short press)
+  GSLC_PIN_BTN_DOWN,        ///< Button Down (short press)
+  GSLC_PIN_BTN_LEFT,        ///< Button Left (short press)
+  GSLC_PIN_BTN_RIGHT,       ///< Button Right (short press)
+  GSLC_PIN_BTN_SEL,         ///< Button Select (short press)
 } gslc_tePin;
 
 
@@ -378,6 +384,19 @@ typedef enum {
   GSLC_FONTREF_PTR         ///< Font reference is a pointer to a font structure
 } gslc_teFontRefType;
 
+
+/// Font Reference modes
+/// - The Font Reference mode defines the source for the
+///   selected font. For graphics libraries that offer
+///   multiple types of fonts, this can be used to differentiate
+///   between a default font, hardware fonts, software fonts, etc.
+/// - The encoding between the different modes is driver-specific.
+typedef enum {
+  GSLC_FONTREF_MODE_DEFAULT, ///< Default font mode
+  GSLC_FONTREF_MODE_1,       ///< Font mode 1
+  GSLC_FONTREF_MODE_2,       ///< Font mode 2
+  GSLC_FONTREF_MODE_3        ///< Font mode 3
+} gslc_teFontRefMode;
 
 
 /// Element reference flags: Describes characteristics of an element
@@ -487,7 +506,7 @@ typedef bool (*GSLC_CB_TICK)(void* pvGui,void* pvElemRef);
 typedef bool (*GSLC_CB_PIN_POLL)(void* pvGui,int16_t* pnPinInd,int16_t* pnPinVal);
 
 /// Callback function for element input ready
-typedef bool (*GSLC_CB_INPUT)(void* pvGui,void* pvElemRef);
+typedef bool (*GSLC_CB_INPUT)(void* pvGui,void* pvElemRef,int16_t nStatus,void* pvData);
 
 // -----------------------------------------------------------------------
 // Structures
@@ -538,6 +557,7 @@ typedef struct gslc_tsEventTouch {
 typedef struct {
   int16_t               nId;            ///< Font ID specified by user
   gslc_teFontRefType    eFontRefType;   ///< Font reference type
+  gslc_teFontRefMode    eFontRefMode;   ///< Font reference mode
   const void*           pvFont;         ///< Void ptr to the font reference (type defined by driver)
   uint16_t              nSize;          ///< Font size
 } gslc_tsFont;
@@ -667,6 +687,9 @@ typedef struct {
   // Callback functions
   //GSLC_CB_EVENT       pfuncXEvent;          ///< UNUSED: Callback func ptr for events
 
+  // Bounding region
+  gslc_tsRect         rBounds;              ///< Bounding rect for page elements
+
 } gslc_tsPage;
 
 
@@ -714,6 +737,8 @@ typedef struct {
   uint8_t             nFontMax;         ///< Maximum number of fonts to allocate
   uint8_t             nFontCnt;         ///< Number of fonts allocated
 
+  uint8_t             nRoundRadius;     ///< Radius for rounded elements
+
 #if (GSLC_FEATURE_COMPOUND)
   gslc_tsElem         sElemTmp;         ///< Temporary element
   gslc_tsElemRef      sElemRefTmp;      ///< Temporary element reference
@@ -757,6 +782,10 @@ typedef struct {
   // Redraw of screen (ie. across page stack)
   bool                bScreenNeedRedraw; ///< Screen requires a redraw
   bool                bScreenNeedFlip;   ///< Screen requires a page flip
+
+  // Current clip region
+  bool                bInvalidateEn;     ///< A region of the display has been invalidated
+  gslc_tsRect         rInvalidateRect;   ///< The rect region that has been invalidated
 
   // Callback functions
   //GSLC_CB_EVENT       pfuncXEvent;      ///< UNUSED: Callback func ptr for events
@@ -974,6 +1003,57 @@ gslc_tsRect gslc_ExpandRect(gslc_tsRect rRect,int16_t nExpandW,int16_t nExpandH)
 /// \return true if inside region, false otherwise
 ///
 bool gslc_IsInWH(int16_t nSelX,int16_t nSelY,uint16_t nWidth,uint16_t nHeight);
+
+///
+/// Expand a rect to include another rect
+/// - This routine can be useful to modify an invalidation region to
+///   include another modified element
+///
+/// \param[in]  pRect:    Initial rect region
+/// \param[in]  rAddRect: Rectangle to add to the rect region
+///
+/// \return none
+///
+void gslc_UnionRect(gslc_tsRect* pRect, gslc_tsRect rAddRect);
+
+///
+/// Reset the invalidation region
+///
+/// \param[in]  pGui:        Pointer to GUI
+///
+/// \return none
+///
+void gslc_InvalidateRgnReset(gslc_tsGui* pGui);
+
+///
+/// Include an entire page (eg. from a page stack) in the invalidation region
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  pPage:       Pointer to page
+///
+/// \return none
+///
+void gslc_InvalidateRgnPage(gslc_tsGui* pGui, gslc_tsPage* pPage);
+
+///
+/// Mark the entire screen as invalidated
+///
+/// \param[in]  pGui:   Pointer to GUI
+///
+/// \return none
+///
+void gslc_InvalidateRgnScreen(gslc_tsGui* pGui);
+
+///
+/// Add a rectangular region to the invalidation region
+/// - This is usually called when an element has been modified
+///
+/// \param[in]  pGui:     Pointer to GUI
+/// \param[in]  rAddRect: Rectangle to add to the invalidation region
+///
+/// \return none
+///
+void gslc_InvalidateRgnAdd(gslc_tsGui* pGui, gslc_tsRect rAddRect);
 
 ///
 /// Perform basic clipping of a single point to a clipping region
@@ -1236,6 +1316,17 @@ void gslc_DrawLinePolar(gslc_tsGui* pGui,int16_t nX,int16_t nY,uint16_t nRadStar
 ///
 void gslc_DrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol);
 
+///
+/// Draw a framed rounded rectangle
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  rRect:       Rectangular region to frame
+/// \param[in]  nRadius:     Radius for the rounded corners
+/// \param[in]  nCol:        Color RGB value for the frame
+///
+/// \return none
+///
+void gslc_DrawFrameRoundRect(gslc_tsGui* pGui, gslc_tsRect rRect, int16_t nRadius, gslc_tsColor nCol);
 
 ///
 /// Draw a filled rectangle
@@ -1247,6 +1338,18 @@ void gslc_DrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol);
 /// \return none
 ///
 void gslc_DrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol);
+
+///
+/// Draw a filled rounded rectangle
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  rRect:       Rectangular region to fill
+/// \param[in]  nRadius:     Radius for the rounded corners
+/// \param[in]  nCol:        Color RGB value to fill
+///
+/// \return none
+///
+void gslc_DrawFillRoundRect(gslc_tsGui* pGui, gslc_tsRect rRect, int16_t nRadius, gslc_tsColor nCol);
 
 ///
 /// Draw a framed circle
@@ -1347,6 +1450,8 @@ void gslc_DrawFillQuad(gslc_tsGui* pGui,gslc_tsPt* psPt,gslc_tsColor nCol);
 ///
 /// Load a font into the local font cache and assign
 /// font ID (nFontId).
+/// - Font is stored into next available internal array element
+/// - NOTE: Use FontSet() instead
 ///
 /// \param[in]  pGui:           Pointer to GUI
 /// \param[in]  nFontId:        ID to use when referencing this font
@@ -1361,6 +1466,25 @@ void gslc_DrawFillQuad(gslc_tsGui* pGui,gslc_tsPt* psPt,gslc_tsColor nCol);
 bool gslc_FontAdd(gslc_tsGui* pGui,int16_t nFontId,gslc_teFontRefType eFontRefType,
     const void* pvFontRef,uint16_t nFontSz);
 
+///
+/// Load a font into the local font cache and store as font ID (nFontId)
+/// - Font is stored into index nFontId, so nFontId must be from
+///   separate font enum (0-based).
+/// - Example:
+///   enum { E_FONT_BTN, E_FONT_TXT, MAX_FONT };
+///
+/// \param[in]  pGui:           Pointer to GUI
+/// \param[in]  nFontId:        ID to use when referencing this font
+/// \param[in]  eFontRefType:   Font reference type (eg. filename or pointer)
+/// \param[in]  pvFontRef:      Reference pointer to identify the font. In the case of SDL
+///                             mode, it is a filepath to the font file. In the case of Arduino
+///                             it is a pointer value to the font bitmap array (GFXFont)
+/// \param[in]  nFontSz:        Typeface size to use (only used in SDL mode)
+///
+/// \return true if load was successful, false otherwise
+///
+bool gslc_FontSet(gslc_tsGui* pGui, int16_t nFontId, gslc_teFontRefType eFontRefType,
+  const void* pvFontRef, uint16_t nFontSz);
 
 ///
 /// Fetch a font from its ID value
@@ -1373,6 +1497,19 @@ bool gslc_FontAdd(gslc_tsGui* pGui,int16_t nFontId,gslc_teFontRefType eFontRefTy
 ///
 gslc_tsFont* gslc_FontGet(gslc_tsGui* pGui,int16_t nFontId);
 
+
+
+///
+/// Set a font's mode
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  nFontId:     ID value used to reference the font (supplied
+///                          originally to gslc_FontAdd()
+/// \param[io]  eFontMode:   Font mode to assign to this font
+///
+/// \return true if success
+///
+bool gslc_FontSetMode(gslc_tsGui* pGui, int16_t nFontId, gslc_teFontRefMode eFontMode);
 
 
 // ------------------------------------------------------------------------
@@ -1712,6 +1849,17 @@ void gslc_ElemSetFillEn(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bFillEn);
 void gslc_ElemSetFrameEn(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bFrameEn);
 
 ///
+/// Set the rounded frame/fill state for an Element
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  pElemRef:    Pointer to Element reference
+/// \param[in]  bRoundEn:    True if rounded, false otherwise
+///
+/// \return none
+///
+void gslc_ElemSetRoundEn(gslc_tsGui* pGui, gslc_tsElemRef* pElemRef, bool bRoundEn);
+
+///
 /// Update the common color selection for an Element
 ///
 /// \param[in]  pGui:        Pointer to GUI
@@ -1792,7 +1940,7 @@ void gslc_ElemSetTxtAlign(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,unsigned nAl
 void gslc_ElemSetTxtMargin(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,unsigned nMargin);
 
 ///
-/// Update the text string associated with an Element ID
+/// Update the text string associated with an Element
 ///
 /// \param[in]  pGui:        Pointer to GUI
 /// \param[in]  pElemRef:    Pointer to Element reference
@@ -1802,6 +1950,16 @@ void gslc_ElemSetTxtMargin(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,unsigned nM
 ///
 void gslc_ElemSetTxtStr(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,const char* pStr);
 
+
+///
+/// Fetch the current text string associated with an Element
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  pElemRef:    Pointer to Element reference
+///
+/// \return Pointer to character array string
+///
+char* gslc_ElemGetTxtStr(gslc_tsGui* pGui, gslc_tsElemRef* pElemRef);
 
 
 ///
@@ -1895,6 +2053,17 @@ void gslc_ElemSetGlowEn(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bGlowEn);
 /// \return none
 ///
 void gslc_ElemSetClickEn(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bClickEn);
+
+///
+/// Update the touch function callback for an element
+///
+/// \param[in]  pGui:       Pointer to GUI
+/// \param[in]  pElemRef:   Pointer to Element reference
+/// \param[in]  cbTouch:    Pointer to the touch callback function
+///
+/// \return none
+///
+void gslc_ElemSetTouchFunc(gslc_tsGui* pGui, gslc_tsElemRef* pElemRef, GSLC_CB_TOUCH funcCb);
 
 ///
 /// Copy style settings from one element to another
@@ -2823,6 +2992,39 @@ bool gslc_ElemDrawByRef(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,gslc_teRedrawT
 ///
 void gslc_ElemDraw(gslc_tsGui* pGui,int16_t nPageId,int16_t nElemId);
 
+
+///
+/// Draw text with full text justification
+/// - This function is usually only required by internal GUIslice rendering
+///   operations but is made available for custom element usage as well
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  pStrBuf:     Pointer to text string buffer
+/// \param[in]  rTxt:        Rectangle region to contain the text
+/// \param[in]  pTxtFont:    Pointer to the font
+/// \param[in]  eTxtFlags:   Text string attributes
+/// \param[in]  eTxtAlign:   Text alignment / justification mode
+/// \param[in]  colTxt:      Text foreground color
+/// \param[in]  colBg:       Text background color
+/// \param[in]  nMarginW:    Horizontal margin within rect region to keep text away
+/// \param[in]  nMarginH:    Vertical margin within rect region to keep text away
+///
+/// \return none
+///
+void gslc_DrawTxtBase(gslc_tsGui* pGui, char* pStrBuf, gslc_tsRect rTxt, gslc_tsFont* pTxtFont, gslc_teTxtFlags eTxtFlags,
+  int8_t eTxtAlign, gslc_tsColor colTxt, gslc_tsColor colBg, int16_t nMarginW, int16_t nMarginH);
+
+
+///
+/// Set the global rounded radius
+/// - Used for rounded rectangles
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  nRadius:     Radius for rounded elements
+///
+/// \return none
+///
+void gslc_SetRoundRadius(gslc_tsGui* pGui, uint8_t nRadius);
 
 // ------------------------------------------------------------------------
 /// @}

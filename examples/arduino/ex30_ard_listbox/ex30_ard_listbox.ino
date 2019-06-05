@@ -32,7 +32,7 @@
 
 #ifdef USE_EXTRA_FONTS
   // Note that these files are located within the Adafruit-GFX library folder:
-#include "Fonts/FreeSansBold12pt7b.h"
+#include "Fonts/FreeSansBold9pt7b.h"
 #endif
 
 // Defines for resources
@@ -41,7 +41,7 @@
 // Enumerations for pages, elements, fonts, images
 enum { E_PG_MAIN };
 enum { E_ELEM_BTN_QUIT, E_ELEM_LISTBOX };
-enum { E_FONT_EXTRA, E_FONT_TXT };
+enum { E_FONT_EXTRA, E_FONT_TXT, MAX_FONT }; // Use separate enum for fonts, MAX_FONT at end
 
 bool        m_bQuit = false;
 
@@ -51,7 +51,6 @@ unsigned    m_nCount = 0;
 
 // Instantiate the GUI
 #define MAX_PAGE                1
-#define MAX_FONT                2
 
 // Define the maximum number of elements per page
 #define MAX_ELEM_PG_MAIN          5                                         // # Elems total
@@ -148,6 +147,7 @@ bool InitOverlays()
     (gslc_tsRect) { 60, 50, 160, 160 }, E_FONT_EXTRA, m_pXListboxBuf, 50, XLISTBOX_SEL_NONE);
   gslc_ElemXListboxSetSize(&m_gui, pElemRef, 4, 2);
   gslc_ElemXListboxItemsSetSize(&m_gui, pElemRef, XLISTBOX_SIZE_AUTO, XLISTBOX_SIZE_AUTO);
+  gslc_ElemXListboxItemsSetTxtMargin(&m_gui, pElemRef, 5, 8);
   gslc_ElemXListboxAddItem(&m_gui, pElemRef, "Red");
   gslc_ElemXListboxAddItem(&m_gui, pElemRef, "Orange");
   gslc_ElemXListboxAddItem(&m_gui, pElemRef, "Yellow");
@@ -179,12 +179,12 @@ void setup()
   // Load Fonts
   #ifdef USE_EXTRA_FONTS
     // Demonstrate the use of additional fonts (must have #include)
-    if (!gslc_FontAdd(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_PTR, &FreeSansBold12pt7b, 1)) { return; }
+    if (!gslc_FontSet(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_PTR, &FreeSansBold9pt7b, 1)) { return; }
   #else
     // Use default font
-    if (!gslc_FontAdd(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_PTR, NULL, 1)) { return; }
+    if (!gslc_FontSet(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_PTR, NULL, 1)) { return; }
   #endif
-  if (!gslc_FontAdd(&m_gui, E_FONT_TXT, GSLC_FONTREF_PTR, NULL, 1)) { return; }
+  if (!gslc_FontSet(&m_gui, E_FONT_TXT, GSLC_FONTREF_PTR, NULL, 1)) { return; }
 
   // Create graphic elements
   InitOverlays();

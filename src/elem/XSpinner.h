@@ -60,6 +60,9 @@ extern "C" {
 // Define the max string length to allocate for dynamic text elements
 #define XSPINNER_STR_LEN  6
 
+// Define the status for GSLC_CB_INPUT callback
+#define XSPINNER_CB_STATE_UPDATE 3
+
 // Extended element data structures
 // - These data structures are maintained in the gslc_tsElem
 //   structure via the pXData pointer
@@ -95,8 +98,7 @@ typedef struct {
 /// \param[in]  nElemId:     Element ID to assign (0..16383 or GSLC_ID_AUTO to autogen)
 /// \param[in]  nPage:       Page ID to attach element to
 /// \param[in]  pXData:      Ptr to extended element data structure
-/// \param[in]  nX0:         X Spinner Starting Coordinate 
-/// \param[in]  nY0:         Y Spinner Starting Coordinate 
+/// \param[in]  rElem:       Rectangle coordinates defining overall size
 /// \param[in]  nMin:        Minimum value of Spinner
 /// \param[in]  nMax:        Maximum value of Spinner
 /// \param[in]  nVal:        Starting value of Spinner
@@ -108,7 +110,7 @@ typedef struct {
 /// \return Pointer to Element or NULL if failure
 ///
 gslc_tsElemRef* gslc_ElemXSpinnerCreate(gslc_tsGui* pGui, int16_t nElemId, int16_t nPage, gslc_tsXSpinner* pXData,
-  int16_t nX0, int16_t nY0, int16_t nMin, int16_t nMax, int16_t nVal, int16_t nIncr,
+  gslc_tsRect rElem, int16_t nMin, int16_t nMax, int16_t nVal, int16_t nIncr,
   int8_t nFontId, int8_t nButtonSz, GSLC_CB_INPUT cbInput);
 
 

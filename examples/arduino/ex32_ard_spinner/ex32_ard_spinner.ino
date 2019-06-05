@@ -43,7 +43,7 @@ enum {E_ELEM_BTN_QUIT,E_ELEM_BTN_EXTRA,E_ELEM_BTN_BACK,
       E_ELEM_TXT_COUNT,E_ELEM_PROGRESS,
       E_ELEM_COMP1,E_ELEM_COMP2,E_ELEM_COMP3,
       E_ELEM_TXT_COMP1,E_ELEM_TXT_COMP2,E_ELEM_TXT_COMP3};
-enum {E_FONT_BTN,E_FONT_TXT,E_FONT_TITLE};
+enum {E_FONT_BTN,E_FONT_TXT,E_FONT_TITLE,MAX_FONT}; // Use separate enum for fonts, MAX_FONT at end
 
 bool      m_bQuit = false;
 
@@ -55,7 +55,6 @@ int16_t   m_nComp3 = 0;
 
 // Instantiate the GUI
 #define MAX_PAGE                2
-#define MAX_FONT                3
 
 // Define the maximum number of elements per page
 #define MAX_ELEM_PG_MAIN        9                 // # Elems total on Main page
@@ -108,12 +107,14 @@ bool CbBtnCommon(void* pvGui,void *pvElemRef,gslc_teTouch eTouch,int16_t nX,int1
 }
 
 // Common Input Ready callback
-bool CbInputCommon(void* pvGui,void *pvElemRef)
+bool CbInputCommon(void* pvGui,void *pvElemRef, int16_t nState, void* pvData)
 {
   gslc_tsElemRef* pElemRef = (gslc_tsElemRef*)(pvElemRef);
   gslc_tsElem* pElem = pElemRef->pElem;
   
   char acTxtNum[4];
+
+  // Assume callback nState == XSPINNER_CB_STATE_UPDATE
 
   // From the element's ID we can determine which input field is ready.
   if (pElem->nId == E_ELEM_COMP1) {
@@ -191,7 +192,7 @@ bool InitOverlays()
 
   // Add compound element
   pElemRef = gslc_ElemXSpinnerCreate(&m_gui,E_ELEM_COMP1,E_PG_MAIN,&m_sXSpinner[0],
-    160,60,0,100,m_nComp1,1,E_FONT_BTN,20,&CbInputCommon);
+    (gslc_tsRect){160,60,68,20},0,100,m_nComp1,1,E_FONT_BTN,20,&CbInputCommon);
 
   // -----------------------------------
   // PAGE: EXTRA
@@ -216,6 +217,7 @@ bool InitOverlays()
   pElemRef = gslc_ElemCreateTxt(&m_gui,E_ELEM_TXT_COMP1,E_PG_EXTRA,(gslc_tsRect){120,nPosY,50,10},
     mCompStr1,sizeof(mCompStr1),E_FONT_TXT);
   m_pElemComp1 = pElemRef; // Save for quick access
+
   // create data 2 display count
   nPosY += nSpaceY;
   pElemRef = gslc_ElemCreateTxt(&m_gui,GSLC_ID_AUTO,E_PG_EXTRA,(gslc_tsRect){60,nPosY,50,10},
@@ -226,7 +228,8 @@ bool InitOverlays()
   m_pElemComp2 = pElemRef; // Save for quick access
   // Add XSpinner compound element
   pElemRef = gslc_ElemXSpinnerCreate(&m_gui,E_ELEM_COMP2,E_PG_EXTRA,&m_sXSpinner[1],
-    200,nPosY,0,100,m_nComp2,1,E_FONT_BTN,20,&CbInputCommon);
+    (gslc_tsRect){200,nPosY,68,20},0,100,m_nComp2,1,E_FONT_BTN,20,&CbInputCommon);
+
   // create data 3 display count
   nPosY += nSpaceY;
   pElemRef = gslc_ElemCreateTxt(&m_gui,GSLC_ID_AUTO,E_PG_EXTRA,(gslc_tsRect){60,nPosY,50,10},
@@ -237,7 +240,7 @@ bool InitOverlays()
   m_pElemComp3 = pElemRef; // Save for quick access
   // Add XSpinner compound element
   pElemRef = gslc_ElemXSpinnerCreate(&m_gui,E_ELEM_COMP3,E_PG_EXTRA,&m_sXSpinner[2],
-    200,160,0,100,m_nComp3,1,E_FONT_BTN,20,&CbInputCommon);
+    (gslc_tsRect){200,nPosY,68,20},0,100,m_nComp3,1,E_FONT_BTN,20,&CbInputCommon);
 
 
   return true;
@@ -255,9 +258,9 @@ void setup()
   if (!gslc_Init(&m_gui,&m_drv,m_asPage,MAX_PAGE,m_asFont,MAX_FONT)) { return; }
 
   // Load Fonts
-  if (!gslc_FontAdd(&m_gui,E_FONT_BTN,GSLC_FONTREF_PTR,NULL,1)) { return; }
-  if (!gslc_FontAdd(&m_gui,E_FONT_TXT,GSLC_FONTREF_PTR,NULL,1)) { return; }
-  if (!gslc_FontAdd(&m_gui,E_FONT_TITLE,GSLC_FONTREF_PTR,NULL,1)) { return; }
+  if (!gslc_FontSet(&m_gui,E_FONT_BTN,GSLC_FONTREF_PTR,NULL,1)) { return; }
+  if (!gslc_FontSet(&m_gui,E_FONT_TXT,GSLC_FONTREF_PTR,NULL,1)) { return; }
+  if (!gslc_FontSet(&m_gui,E_FONT_TITLE,GSLC_FONTREF_PTR,NULL,1)) { return; }
 
   // Create page elements
   InitOverlays();

@@ -4,7 +4,7 @@
 // - https://www.impulseadventure.com/elec/guislice-gui.html
 // - https://github.com/ImpulseAdventure/GUIslice
 //
-// - Version 0.11.2
+// - Version 0.11.4
 // =======================================================================
 //
 // The MIT License
@@ -42,6 +42,10 @@
 #include "GUIslice_drv.h"
 
 #include <stdio.h>
+
+#if defined(DBG_REDRAW)
+  #include <Arduino.h> // For delay()
+#endif // DBG_REDRAW
 
 #ifdef DBG_FRAME_RATE
   #include <time.h> // for FrameRate reporting
@@ -105,7 +109,6 @@ bool gslc_Init(gslc_tsGui* pGui,void* pvDriver,gslc_tsPage* asPage,uint8_t nMaxP
 {
   unsigned  nInd;
   bool      bOk = true;
-  bool      bTouchOk = true;
 
   // Provide indication that debug messaging is active
   #if !defined(INIT_MSG_DISABLE)
@@ -156,6 +159,11 @@ bool gslc_Init(gslc_tsGui* pGui,void* pvDriver,gslc_tsPage* asPage,uint8_t nMaxP
   }
   pGui->bScreenNeedRedraw  = true;
   pGui->bScreenNeedFlip    = false;
+
+  gslc_InvalidateRgnReset(pGui);
+
+  // Default global element characteristics
+  pGui->nRoundRadius = 4;
 
   // Initialize collection of fonts with user-supplied pointer
   pGui->asFont      = asFont;
@@ -219,7 +227,7 @@ bool gslc_Init(gslc_tsGui* pGui,void* pvDriver,gslc_tsPage* asPage,uint8_t nMaxP
       // Instead, a flag is set that can be used to alert the
       // user on their display (in case the debug messaging was
       // not enabled)
-      bTouchOk &= gslc_InitTouch(pGui,GSLC_DEV_TOUCH);
+      bool bTouchOk = gslc_InitTouch(pGui,GSLC_DEV_TOUCH);
       if (bTouchOk) {
         #if !defined(INIT_MSG_DISABLE)
         GSLC_DEBUG_PRINT("- Initialized touch handler [%s] OK\n", gslc_GetNameTouch(pGui));
@@ -231,6 +239,9 @@ bool gslc_Init(gslc_tsGui* pGui,void* pvDriver,gslc_tsPage* asPage,uint8_t nMaxP
       }
     }
   #endif
+
+  // Initialize the entire display as being invalidated
+  gslc_InvalidateRgnScreen(pGui);
 
   // If the display didn't initialize properly, then return
   // false which should mark it as a fatal error. Note that
@@ -312,6 +323,7 @@ typedef enum {
   GSLC_DEBUG_PRINT_NORM,
   GSLC_DEBUG_PRINT_TOKEN,
   GSLC_DEBUG_PRINT_UINT16,
+  GSLC_DEBUG_PRINT_CHAR,
   GSLC_DEBUG_PRINT_STR,
   GSLC_DEBUG_PRINT_STR_P
 } gslc_teDebugPrintState;
@@ -321,6 +333,7 @@ typedef enum {
 // supports the following tokens:
 // - %u (16-bit unsigned int in RAM) [see NOTE]
 // - %d (16-bit signed int in RAM)
+// - %c (character)
 // - %s (null-terminated string in RAM)
 // - %z (null-terminated string in FLASH)
 // Format strings are expected to be in FLASH if GSLC_USE_PROGMEM enabled
@@ -399,6 +412,10 @@ void gslc_DebugPrintf(const char* pFmt, ...)
           bNumStart = false;
           nNumDivisor = nMaxDivisor;
 
+        } else if (cFmt == 'c') {
+          nState = GSLC_DEBUG_PRINT_CHAR;
+          cOut = (char)va_arg(vlist,unsigned);
+
         } else if (cFmt == 's') {
           nState = GSLC_DEBUG_PRINT_STR;
           pStr = va_arg(vlist,char*);
@@ -434,6 +451,10 @@ void gslc_DebugPrintf(const char* pFmt, ...)
         } while (cOut != 0);
         nState = GSLC_DEBUG_PRINT_NORM;
         // Don't advance format string index
+
+      } else if (nState == GSLC_DEBUG_PRINT_CHAR) {
+        (g_pfDebugOut)(cOut);
+        nState = GSLC_DEBUG_PRINT_NORM;
 
       } else if (nState == GSLC_DEBUG_PRINT_UINT16) {
 
@@ -1191,6 +1212,24 @@ void gslc_DrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
   gslc_PageFlipSet(pGui,true);
 }
 
+void gslc_DrawFrameRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadius,gslc_tsColor nCol)
+{
+  // Ensure dimensions are valid
+  if ((rRect.w == 0) || (rRect.h == 0)) {
+    return;
+  }
+
+#if (DRV_HAS_DRAW_RECT_ROUND_FRAME)
+  // Call optimized driver implementation
+  gslc_DrvDrawFrameRoundRect(pGui,rRect,nRadius,nCol);
+#else
+  // TODO
+#endif
+
+  gslc_PageFlipSet(pGui,true);
+}
+
+
 void gslc_DrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 {
   // Ensure dimensions are valid
@@ -1213,6 +1252,24 @@ void gslc_DrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 
   gslc_PageFlipSet(pGui,true);
 }
+
+void gslc_DrawFillRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadius,gslc_tsColor nCol)
+{
+  // Ensure dimensions are valid
+  if ((rRect.w == 0) || (rRect.h == 0)) {
+    return;
+  }
+
+#if (DRV_HAS_DRAW_RECT_ROUND_FILL)
+  // Call optimized driver implementation
+  gslc_DrvDrawFillRoundRect(pGui,rRect,nRadius,nCol);
+#else
+  // TODO
+#endif
+
+  gslc_PageFlipSet(pGui,true);
+}
+
 
 
 // Expand or contract a rectangle in width and/or height (equal
@@ -1242,6 +1299,86 @@ gslc_tsRect gslc_ExpandRect(gslc_tsRect rRect,int16_t nExpandW,int16_t nExpandH)
   rNew.y = rRect.y - nExpandH;
 
   return rNew;
+}
+
+
+// Expand the current rect (pRect) to enclose the additional rect region (rAddRect)
+void gslc_UnionRect(gslc_tsRect* pRect,gslc_tsRect rAddRect)
+{
+  int16_t nSrcX0, nSrcY0, nSrcX1, nSrcY1;
+  int16_t nAddX0, nAddY0, nAddX1, nAddY1;
+
+  // If the source rect has zero dimensions, then treat as empty
+  if ((pRect->w == 0) || (pRect->h == 0)) {
+    // No source region defined, simply copy add region
+    *pRect = rAddRect;
+    return;
+  }
+
+  // Source region valid, so increase dimensions
+
+  // Calculate the rect boundary coordinates
+  nSrcX0 = pRect->x;
+  nSrcY0 = pRect->y;
+  nSrcX1 = pRect->x + pRect->w - 1;
+  nSrcY1 = pRect->y + pRect->h - 1;
+  nAddX0 = rAddRect.x;
+  nAddY0 = rAddRect.y;
+  nAddX1 = rAddRect.x + rAddRect.w - 1;
+  nAddY1 = rAddRect.y + rAddRect.h - 1;
+
+  // Find the new maximal dimensions
+  nSrcX0 = (nAddX0 < nSrcX0) ? nAddX0 : nSrcX0;
+  nSrcY0 = (nAddY0 < nSrcY0) ? nAddY0 : nSrcY0;
+  nSrcX1 = (nAddX1 > nSrcX1) ? nAddX1 : nSrcX1;
+  nSrcY1 = (nAddY1 > nSrcY1) ? nAddY1 : nSrcY1;
+
+  // Update the original rect region
+  pRect->x = nSrcX0;
+  pRect->y = nSrcY0;
+  pRect->w = nSrcX1 - nSrcX0 + 1;
+  pRect->h = nSrcY1 - nSrcY0 + 1;
+
+}
+
+void gslc_InvalidateRgnReset(gslc_tsGui* pGui)
+{
+  pGui->bInvalidateEn = false;
+  pGui->rInvalidateRect = (gslc_tsRect) { 0, 0, 1, 1 };
+}
+
+void gslc_InvalidateRgnScreen(gslc_tsGui* pGui)
+{
+#if defined(DBG_REDRAW)
+  GSLC_DEBUG_PRINT("DBG: InvRgnScreen\n", "");
+#endif
+  pGui->bInvalidateEn = true;
+  pGui->rInvalidateRect = (gslc_tsRect) { 0, 0, pGui->nDispW, pGui->nDispH };
+}
+
+void gslc_InvalidateRgnPage(gslc_tsGui* pGui, gslc_tsPage* pPage)
+{
+  if (pPage == NULL) {
+    return;
+  }
+#if defined(DBG_REDRAW)
+  GSLC_DEBUG_PRINT("DBG: InvRgnPage: Page=%d (%d,%d)-(%d,%d)\n",
+    pPage->nPageId,
+    pPage->rBounds.x, pPage->rBounds.y, pPage->rBounds.x + pPage->rBounds.w - 1, pPage->rBounds.y + pPage->rBounds.h - 1); //xxx
+#endif // DBG_REDRAW
+  gslc_InvalidateRgnAdd(pGui, pPage->rBounds);
+  pGui->bInvalidateEn = true;
+}
+
+
+void gslc_InvalidateRgnAdd(gslc_tsGui* pGui, gslc_tsRect rAddRect)
+{
+  if (pGui->bInvalidateEn) {
+    gslc_UnionRect(&(pGui->rInvalidateRect), rAddRect);
+  } else {
+    pGui->bInvalidateEn = true;
+    pGui->rInvalidateRect = rAddRect;
+  }
 }
 
 
@@ -1533,11 +1670,11 @@ void gslc_DrawFillQuad(gslc_tsGui* pGui,gslc_tsPt* psPt,gslc_tsColor nCol)
 // Font Functions
 // -----------------------------------------------------------------------
 
-bool gslc_FontAdd(gslc_tsGui* pGui,int16_t nFontId,gslc_teFontRefType eFontRefType,
-    const void* pvFontRef,uint16_t nFontSz)
+bool gslc_FontSetBase(gslc_tsGui* pGui, uint8_t nFontInd, int16_t nFontId, gslc_teFontRefType eFontRefType,
+	const void* pvFontRef, uint16_t nFontSz)
 {
-  if (pGui->nFontCnt+1 > (pGui->nFontMax)) {
-    GSLC_DEBUG_PRINT("ERROR: FontAdd(%s) added too many fonts\n","");
+  if (nFontInd >= pGui->nFontMax) {
+    GSLC_DEBUG_PRINT("ERROR: FontSetBase() invalid Font index=%d\n",nFontInd);
     return false;
   } else {
     // Fetch a font resource from the driver
@@ -1546,12 +1683,59 @@ bool gslc_FontAdd(gslc_tsGui* pGui,int16_t nFontId,gslc_teFontRefType eFontRefTy
     //       and then return 'false'. Note that DrvFontAdd() may normally
     //       return NULL in ADAGFX mode for some font types.
 
-    pGui->asFont[pGui->nFontCnt].eFontRefType = eFontRefType;
-    pGui->asFont[pGui->nFontCnt].pvFont       = pvFont;
-    pGui->asFont[pGui->nFontCnt].nId          = nFontId;
-    pGui->asFont[pGui->nFontCnt].nSize        = nFontSz;
-    pGui->nFontCnt++;
+    gslc_ResetFont(&(pGui->asFont[nFontInd]));
+  
+    pGui->asFont[nFontInd].eFontRefType = eFontRefType;
+    // TODO: Support specification of mode via FontAdd() API?
+    pGui->asFont[nFontInd].eFontRefMode = GSLC_FONTREF_MODE_DEFAULT;
+    pGui->asFont[nFontInd].pvFont       = pvFont;
+    pGui->asFont[nFontInd].nId          = nFontId;
+    pGui->asFont[nFontInd].nSize        = nFontSz;
+
     return true;
+  }
+}
+
+
+// Store font into indexed position in font storage
+// - nFontId must be in range 0..nFontMax-1
+bool gslc_FontSet(gslc_tsGui* pGui, int16_t nFontId, gslc_teFontRefType eFontRefType,
+	const void* pvFontRef, uint16_t nFontSz)
+{
+  if ((nFontId < 0) || (nFontId >= pGui->nFontMax)) {
+    GSLC_DEBUG_PRINT("ERROR: FontSet() invalid Font ID=%d\n",nFontId);
+    return false;
+  } else {
+	  bool bRet = false;
+
+    // The font index is set to the same as the font enum ID
+	  uint8_t nFontInd = nFontId;
+	  bRet = gslc_FontSetBase(pGui, nFontInd, nFontId, eFontRefType, pvFontRef, nFontSz);
+
+    // Ensure the total font count is set to max
+	  pGui->nFontCnt = pGui->nFontMax;
+
+	  return bRet;
+  }
+}
+
+bool gslc_FontAdd(gslc_tsGui* pGui,int16_t nFontId,gslc_teFontRefType eFontRefType,
+    const void* pvFontRef,uint16_t nFontSz)
+{
+  if (pGui->nFontCnt+1 > (pGui->nFontMax)) {
+    GSLC_DEBUG_PRINT("ERROR: FontAdd(%s) added too many fonts\n","");
+    return false;
+  } else {
+	  bool bRet = false;
+
+	  // Fetch the next unallocated index
+	  uint8_t nFontInd = pGui->nFontCnt;
+	  bRet = gslc_FontSetBase(pGui, nFontInd, nFontId, eFontRefType, pvFontRef, nFontSz);
+
+	  // Increment the current font index
+	  pGui->nFontCnt++;
+
+	  return bRet;
   }
 }
 
@@ -1567,7 +1751,17 @@ gslc_tsFont* gslc_FontGet(gslc_tsGui* pGui,int16_t nFontId)
   return NULL;
 }
 
-
+bool gslc_FontSetMode(gslc_tsGui* pGui, int16_t nFontId, gslc_teFontRefMode eFontMode)
+{
+  gslc_tsFont* pFont = NULL;
+  pFont = gslc_FontGet(pGui, nFontId);
+  if (!pFont) {
+    // TODO: ERROR
+    return false;
+  }
+  pFont->eFontRefMode = eFontMode;
+  return true;
+}
 
 
 // ------------------------------------------------------------------------
@@ -1634,6 +1828,9 @@ void gslc_PageAdd(gslc_tsGui* pGui,int16_t nPageId,gslc_tsElem* psElem,uint16_t 
   // Assign the requested Page ID
   pPage->nPageId = nPageId;
 
+  // Initialize the page elements bounds to empty
+  pPage->rBounds = (gslc_tsRect) { 0, 0, 0, 0 };
+
   // Increment the page count
   pGui->nPageCnt++;
 
@@ -1663,9 +1860,9 @@ int gslc_GetPageCur(gslc_tsGui* pGui)
 void gslc_SetStackPage(gslc_tsGui* pGui, uint8_t nStackPos, int16_t nPageId)
 {
   int16_t nPageSaved = GSLC_PAGE_NONE;
-  gslc_tsPage* pStackPage = pGui->apPageStack[nStackPos];
-  if (pStackPage != NULL) {
-    nPageSaved = pStackPage->nPageId;
+  gslc_tsPage* pPageSaved = pGui->apPageStack[nStackPos];
+  if (pPageSaved != NULL) {
+    nPageSaved = pPageSaved->nPageId;
   }
 
   gslc_tsPage* pPage = NULL;
@@ -1693,8 +1890,24 @@ void gslc_SetStackPage(gslc_tsGui* pGui, uint8_t nStackPos, int16_t nPageId)
   #endif
 
   // A change of page should always force a future redraw
+  // TODO: Consider that showing a popup could potentially optimize out
+  // the forced redraw step.
   if (nPageSaved != nPageId) {
     gslc_PageRedrawSet(pGui,true);
+  }
+
+  // Invalidate the old page in the stack
+  if (pPageSaved != NULL) {
+    gslc_InvalidateRgnPage(pGui, pPageSaved);
+  }
+
+  // Invalidate the new page in the stack and any above
+  for (uint8_t nStackPage = nStackPos; nStackPage < GSLC_STACK__MAX; nStackPage++) {
+    // Select the page collection to process
+    pPage = pGui->apPageStack[nStackPage];
+    if (pPage != NULL) {
+      gslc_InvalidateRgnPage(pGui, pPage);
+    }
   }
 }
 
@@ -1860,8 +2073,35 @@ void gslc_PageRedrawGo(gslc_tsGui* pGui)
   //   cause other elements to be redrawn as well.
   gslc_PageRedrawCalc(pGui);
 
-  // Determine final state of full-page redraw
+  // Determine final state of full-screen redraw
   bool  bPageRedraw = gslc_PageRedrawGet(pGui);
+
+  // Set the clipping based on the current invalidated region
+  if (pGui->bInvalidateEn) {
+    #if defined(DBG_REDRAW)
+    // Note that this will still outline the invalidation region
+    // even if we later discover that the changed element is on
+    // a page in the stack that has been disabled through
+    // abPageStackDoDraw[] = false.
+    GSLC_DEBUG_PRINT("DBG: PageRedrawGo() InvRgn: En=%d (%d,%u)-(%d,%d) PageRedraw=%d\n",
+      pGui->bInvalidateEn, pGui->rInvalidateRect.x, pGui->rInvalidateRect.y,
+      pGui->rInvalidateRect.x + pGui->rInvalidateRect.w - 1,
+      pGui->rInvalidateRect.y + pGui->rInvalidateRect.h - 1, bPageRedraw);
+
+    // Mark the invalidation region
+    gslc_DrvDrawFrameRect(pGui, pGui->rInvalidateRect, GSLC_COL_RED);
+
+    // Slow down rendering
+    delay(1000);
+    #endif // DBG_REDRAW
+
+    gslc_SetClipRect(pGui, &(pGui->rInvalidateRect));
+  }
+  else {
+    // No invalidation region defined, so default the
+    // clipping region to the entire display
+    gslc_SetClipRect(pGui, NULL);
+  }
 
   // If a full page redraw is required, then start by
   // redrawing the background.
@@ -1883,6 +2123,10 @@ void gslc_PageRedrawGo(gslc_tsGui* pGui)
   // TODO: Handle GSLC_EVTSUB_DRAW_NEEDED
   uint32_t nSubType = (bPageRedraw)?GSLC_EVTSUB_DRAW_FORCE:GSLC_EVTSUB_DRAW_NEEDED;
   void*    pvData = NULL;
+
+  // TODO: Consider creating a flag that indicates whether any elements
+  // on the page have requested redraw. This would enable us to skip
+  // over this exhaustive search every time we call Update()
 
   // Issue page redraw events to all pages in stack
   // - Start from bottom page in stack first
@@ -1912,6 +2156,12 @@ void gslc_PageRedrawGo(gslc_tsGui* pGui)
 
   // Clear the page redraw flag
   gslc_PageRedrawSet(pGui,false);
+
+  // Reset the invalidated regions
+  gslc_InvalidateRgnReset(pGui);
+ 
+  // Restore the clipping region to the entire display
+  gslc_SetClipRect(pGui, NULL);
 
   // Page flip the entire screen
   // - TODO: We could also call Update instead of Flip as that would
@@ -2166,6 +2416,19 @@ void* gslc_GetXDataFromRef(gslc_tsGui* pGui, gslc_tsElemRef* pElemRef, int16_t n
     return NULL;
   }
   return pXData;
+}
+
+// ------------------------------------------------------------------------
+// Element Global Functions
+// ------------------------------------------------------------------------
+
+
+// Set the global rounded radius for rounded rectangles
+void gslc_SetRoundRadius(gslc_tsGui* pGui,uint8_t nRadius)
+{
+  pGui->nRoundRadius = (int16_t)nRadius;
+  // Update redraw flag
+  gslc_PageRedrawSet(pGui,true);
 }
 
 
@@ -2483,6 +2746,100 @@ void gslc_ElemDraw(gslc_tsGui* pGui,int16_t nPageId,int16_t nElemId)
   gslc_ElemEvent(pGui,sEvent);
 }
 
+void gslc_DrawTxtBase(gslc_tsGui* pGui, char* pStrBuf,gslc_tsRect rTxt,gslc_tsFont* pTxtFont,gslc_teTxtFlags eTxtFlags,
+	int8_t eTxtAlign,gslc_tsColor colTxt,gslc_tsColor colBg,int16_t nMarginW,int16_t nMarginH)
+{
+  int16_t   nElemX,nElemY;
+  uint16_t  nElemW,nElemH;
+
+  nElemX    = rTxt.x;
+  nElemY    = rTxt.y;
+  nElemW    = rTxt.w;
+  nElemH    = rTxt.h;
+
+  // Overlay the text
+  bool bRenderTxt = true;
+  // Skip text render if buffer pointer not allocated
+  if ((bRenderTxt) && (pStrBuf == NULL)) { bRenderTxt = false; }
+  // Skip text render if string is not set
+  if ((bRenderTxt) && ((eTxtFlags & GSLC_TXT_ALLOC) == GSLC_TXT_ALLOC_NONE)) { bRenderTxt = false; }
+
+  // Do we still want to render?
+  if (bRenderTxt) {
+#if (DRV_HAS_DRAW_TEXT)
+
+    // Determine if GUIslice or driver should perform text alignment
+    // - Generally, GUIslice provides the text alignment functionality
+    //   by querying the display driver for the dimensions of the text
+    //   to be rendered.
+    // - Some drivers (such as TFT_eSPI) perform more complex logic
+    //   associated with the text alignment and hence GUIslice will
+    //   defer to the driver to handle the positioning. In that case
+    //   the bounding box and alignment mode is provided to the driver.
+#if (DRV_OVERRIDE_TXT_ALIGN)
+
+    // GUIslice will allow the driver to perform the text alignment
+    // calculations.
+
+    // Provide bounding box and alignment flag to driver to calculate
+    int16_t nX0 = nElemX + nMarginW;
+    int16_t nY0 = nElemY + nMarginH;
+    int16_t nX1 = nX0 + nElemW - 2*nMarginW;
+    int16_t nY1 = nY0 + nElemH - 2*nMarginH;
+
+    gslc_DrvDrawTxtAlign(pGui,nX0,nY0,nX1,nY1,eTxtAlign,pTxtFont,
+            pStrBuf,eTxtFlags,colTxt,colBg);
+
+#else // DRV_OVERRIDE_TXT_ALIGN
+
+    // GUIslice will ask the driver for the text dimensions and calculate
+    // the appropriate positioning to support the requested text
+    // alignment mode.
+
+    // Fetch the size of the text to allow for justification
+    // NOTE: For multi-line text strings, the following call will
+    //       return the maximum dimensions of the entire block of
+    //       text, thus alignment will be based on the outer dimensions
+    //       not individual rows of text. As a result, the overall
+    //       text block will be rendered with the requested alignment
+    //       but individual rows will render like GSLC_ALIGNH_LEFT
+    //       within the aligned text block. In order to support per-line
+    //       horizontal justification, a pre-scan and alignment calculation
+    //       for each text row would need to be performed.
+    int16_t       nTxtOffsetX,nTxtOffsetY;
+    uint16_t      nTxtSzW,nTxtSzH;
+    gslc_DrvGetTxtSize(pGui,pTxtFont,pStrBuf,eTxtFlags,&nTxtOffsetX,&nTxtOffsetY,&nTxtSzW,&nTxtSzH);
+
+    // Calculate the text alignment
+    int16_t       nTxtX,nTxtY;
+
+    // Check for ALIGNH_LEFT & ALIGNH_RIGHT. Default to ALIGNH_MID
+    if      (eTxtAlign & GSLC_ALIGNH_LEFT)     { nTxtX = nElemX+nMarginW; }
+    else if (eTxtAlign & GSLC_ALIGNH_RIGHT)    { nTxtX = nElemX+nElemW-nMarginW-nTxtSzW; }
+    else                                       { nTxtX = nElemX+(nElemW/2)-(nTxtSzW/2); }
+
+    // Check for ALIGNV_TOP & ALIGNV_BOT. Default to ALIGNV_MID
+    if      (eTxtAlign & GSLC_ALIGNV_TOP)      { nTxtY = nElemY+nMarginH; }
+    else if (eTxtAlign & GSLC_ALIGNV_BOT)      { nTxtY = nElemY+nElemH-nMarginH-nTxtSzH; }
+    else                                       { nTxtY = nElemY+(nElemH/2)-(nTxtSzH/2); }
+
+    // Now correct for offset from text bounds
+    // - This is used by the driver (such as Adafruit-GFX) to provide an
+    //   adjustment for baseline height, etc.
+    nTxtX += nTxtOffsetX;
+    nTxtY -= nTxtOffsetY;
+
+    // Call the driver text rendering routine
+    gslc_DrvDrawTxt(pGui,nTxtX,nTxtY,pTxtFont,pStrBuf,eTxtFlags,colTxt,colBg);
+
+#endif // DRV_OVERRIDE_TXT_ALIGN
+
+#else // DRV_HAS_DRAW_TEXT
+    // No text support in driver, so skip
+#endif // DRV_HAS_DRAW_TEXT
+  }
+}
+
 // Draw an element to the active display
 // - Element is referenced by an element pointer
 // - TODO: Handle GSLC_TYPE_BKGND
@@ -2554,10 +2911,13 @@ bool gslc_ElemDrawByRef(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,gslc_teRedrawT
   if (pElem->nFeatures & GSLC_ELEM_FEA_FILL_EN) {
     if (bGlowEn && bGlowing) {
       colBg = pElem->colElemFillGlow;
-      gslc_DrawFillRect(pGui,rElemInner,pElem->colElemFillGlow);
     } else {
       colBg = pElem->colElemFill;
-      gslc_DrawFillRect(pGui,rElemInner,pElem->colElemFill);
+    }
+    if (pElem->nFeatures & GSLC_ELEM_FEA_ROUND_EN) {
+      gslc_DrawFillRoundRect(pGui, rElemInner, pGui->nRoundRadius, colBg);
+    } else {
+      gslc_DrawFillRect(pGui, rElemInner, colBg);
     }
   } else {
     // TODO: If unfilled, then we might need
@@ -2574,7 +2934,11 @@ bool gslc_ElemDrawByRef(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,gslc_teRedrawT
   gslc_DrawFrameRect(pGui,pElem->rElem,GSLC_COL_GRAY_DK1);
   #else
   if (pElem->nFeatures & GSLC_ELEM_FEA_FRAME_EN) {
-    gslc_DrawFrameRect(pGui,pElem->rElem,pElem->colElemFrame);
+    if (pElem->nFeatures & GSLC_ELEM_FEA_ROUND_EN) {
+      gslc_DrawFrameRoundRect(pGui, pElem->rElem, pGui->nRoundRadius, pElem->colElemFrame);
+    } else {
+      gslc_DrawFrameRect(pGui, pElem->rElem, pElem->colElemFrame);
+    }
   }
   #endif
 
@@ -2604,92 +2968,16 @@ bool gslc_ElemDrawByRef(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,gslc_teRedrawT
   // Text overlays
   // --------------------------------------------------------------------------
 
-  // Overlay the text
-  bool bRenderTxt = true;
-  // Skip text render if buffer pointer not allocated
-  if ((bRenderTxt) && (pElem->pStrBuf == NULL)) { bRenderTxt = false; }
-  // Skip text render if string is not set
-  if ((bRenderTxt) && ((pElem->eTxtFlags & GSLC_TXT_ALLOC) == GSLC_TXT_ALLOC_NONE)) { bRenderTxt = false; }
-
-  // Do we still want to render?
-  if (bRenderTxt) {
-#if (DRV_HAS_DRAW_TEXT)
+  // Draw text string if defined
+  if (pElem->pStrBuf) {
+    gslc_tsColor  colTxt    = (bGlowNow)? pElem->colElemTextGlow : pElem->colElemText;
     int16_t       nMargin   = pElem->nTxtMargin;
 
-    // Determine the text color
-    gslc_tsColor  colTxt    = (bGlowNow)? pElem->colElemTextGlow : pElem->colElemText;
-
-
-    // Determine if GUIslice or driver should perform text alignment
-    // - Generally, GUIslice provides the text alignment functionality
-    //   by querying the display driver for the dimensions of the text
-    //   to be rendered.
-    // - Some drivers (such as TFT_eSPI) perform more complex logic
-    //   associated with the text alignment and hence GUIslice will
-    //   defer to the driver to handle the positioning. In that case
-    //   the bounding box and alignment mode is provided to the driver.
-#if (DRV_OVERRIDE_TXT_ALIGN)
-
-    // GUIslice will allow the driver to perform the text alignment
-    // calculations.
-
-    // Provide bounding box and alignment flag to driver to calculate
-    int16_t nX0 = nElemX + nMargin;
-    int16_t nY0 = nElemY + nMargin;
-    int16_t nX1 = nX0 + nElemW - 2*nMargin;
-    int16_t nY1 = nY0 + nElemH - 2*nMargin;
-
-    gslc_DrvDrawTxtAlign(pGui,nX0,nY0,nX1,nY1,pElem->eTxtAlign,pElem->pTxtFont,
-            pElem->pStrBuf,pElem->eTxtFlags,colTxt,colBg);
-
-#else // DRV_OVERRIDE_TXT_ALIGN
-
-    // GUIslice will ask the driver for the text dimensions and calculate
-    // the appropriate positioning to support the requested text
-    // alignment mode.
-
-    // Fetch the size of the text to allow for justification
-    // NOTE: For multi-line text strings, the following call will
-    //       return the maximum dimensions of the entire block of
-    //       text, thus alignment will be based on the outer dimensions
-    //       not individual rows of text. As a result, the overall
-    //       text block will be rendered with the requested alignment
-    //       but individual rows will render like GSLC_ALIGNH_LEFT
-    //       within the aligned text block. In order to support per-line
-    //       horizontal justification, a pre-scan and alignment calculation
-    //       for each text row would need to be performed.
-    int16_t       nTxtOffsetX,nTxtOffsetY;
-    uint16_t      nTxtSzW,nTxtSzH;
-    gslc_DrvGetTxtSize(pGui,pElem->pTxtFont,pElem->pStrBuf,pElem->eTxtFlags,&nTxtOffsetX,&nTxtOffsetY,&nTxtSzW,&nTxtSzH);
-
-    // Calculate the text alignment
-    int16_t       nTxtX,nTxtY;
-
-    // Check for ALIGNH_LEFT & ALIGNH_RIGHT. Default to ALIGNH_MID
-    if      (pElem->eTxtAlign & GSLC_ALIGNH_LEFT)     { nTxtX = nElemX+nMargin; }
-    else if (pElem->eTxtAlign & GSLC_ALIGNH_RIGHT)    { nTxtX = nElemX+nElemW-nMargin-nTxtSzW; }
-    else                                              { nTxtX = nElemX+(nElemW/2)-(nTxtSzW/2); }
-
-    // Check for ALIGNV_TOP & ALIGNV_BOT. Default to ALIGNV_MID
-    if      (pElem->eTxtAlign & GSLC_ALIGNV_TOP)      { nTxtY = nElemY+nMargin; }
-    else if (pElem->eTxtAlign & GSLC_ALIGNV_BOT)      { nTxtY = nElemY+nElemH-nMargin-nTxtSzH; }
-    else                                              { nTxtY = nElemY+(nElemH/2)-(nTxtSzH/2); }
-
-    // Now correct for offset from text bounds
-    // - This is used by the driver (such as Adafruit-GFX) to provide an
-    //   adjustment for baseline height, etc.
-    nTxtX += nTxtOffsetX;
-    nTxtY -= nTxtOffsetY;
-
-    // Call the driver text rendering routine
-    gslc_DrvDrawTxt(pGui,nTxtX,nTxtY,pElem->pTxtFont,pElem->pStrBuf,pElem->eTxtFlags,colTxt,colBg);
-
-#endif // DRV_OVERRIDE_TXT_ALIGN
-
-#else // DRV_HAS_DRAW_TEXT
-    // No text support in driver, so skip
-#endif // DRV_HAS_DRAW_TEXT
+	  gslc_DrawTxtBase(pGui, pElem->pStrBuf, pElem->rElem, pElem->pTxtFont, pElem->eTxtFlags,
+		  pElem->eTxtAlign, colTxt, colBg, nMargin, nMargin);
   }
+
+  // --------------------------------------------------------------------------
 
   // Mark the element as no longer requiring redraw
   gslc_ElemSetRedraw(pGui,pElemRef,GSLC_REDRAW_NONE);
@@ -2725,6 +3013,19 @@ void gslc_ElemSetFrameEn(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bFrameEn
     pElem->nFeatures |= GSLC_ELEM_FEA_FRAME_EN;
   } else {
     pElem->nFeatures &= ~GSLC_ELEM_FEA_FRAME_EN;
+  }
+  gslc_ElemSetRedraw(pGui,pElemRef,GSLC_REDRAW_FULL);
+}
+
+void gslc_ElemSetRoundEn(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bRoundEn)
+{
+  gslc_tsElem* pElem = gslc_GetElemFromRefD(pGui, pElemRef, __LINE__);
+  if (!pElem) return;
+
+  if (bRoundEn) {
+    pElem->nFeatures |= GSLC_ELEM_FEA_ROUND_EN;
+  } else {
+    pElem->nFeatures &= ~GSLC_ELEM_FEA_ROUND_EN;
   }
   gslc_ElemSetRedraw(pGui,pElemRef,GSLC_REDRAW_FULL);
 }
@@ -2805,9 +3106,15 @@ void gslc_ElemSetTxtStr(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,const char* pS
   if (strncmp(pElem->pStrBuf,pStr,pElem->nStrBufMax-1)) {
     strncpy(pElem->pStrBuf,pStr,pElem->nStrBufMax-1);
     pElem->pStrBuf[pElem->nStrBufMax-1] = '\0';  // Force termination
-    // TODO: Might want to change to GSLC_REDRAW_INC
-    gslc_ElemSetRedraw(pGui,pElemRef,GSLC_REDRAW_FULL);
+    gslc_ElemSetRedraw(pGui,pElemRef,GSLC_REDRAW_INC);
   }
+}
+
+char* gslc_ElemGetTxtStr(gslc_tsGui* pGui, gslc_tsElemRef* pElemRef)
+{
+  gslc_tsElem* pElem = gslc_GetElemFromRefD(pGui, pElemRef, __LINE__);
+  if (!pElem) return NULL;
+  return pElem->pStrBuf;
 }
 
 void gslc_ElemSetTxtCol(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,gslc_tsColor colVal)
@@ -2877,9 +3184,13 @@ void gslc_ElemSetRedraw(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,gslc_teRedrawT
       break;
     case GSLC_REDRAW_FULL:
       eFlags = (eFlags & ~GSLC_ELEMREF_REDRAW_MASK) | GSLC_ELEMREF_REDRAW_FULL;
+      // Mark the region as invalidated
+      gslc_InvalidateRgnAdd(pGui, pElemRef->pElem->rElem);
       break;
     case GSLC_REDRAW_INC:
       eFlags = (eFlags & ~GSLC_ELEMREF_REDRAW_MASK) | GSLC_ELEMREF_REDRAW_INC;
+      // Mark the region as invalidated
+      gslc_InvalidateRgnAdd(pGui, pElemRef->pElem->rElem);
       break;
   }
 
@@ -2907,11 +3218,10 @@ void gslc_ElemSetRedraw(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,gslc_teRedrawT
   // - For now, assume no need to trigger a parent redraw.
   // - TODO: Consider detecting scenarios in which we should
   //   propagate the redraw to the parent.
-
-  //gslc_tsElem*  pElem = gslc_GetElemFromRef(pGui,pElemRef);
-  //if (pElem->pElemRefParent != NULL) {
-  //  gslc_ElemSetRedraw(pGui,pElem->pElemRefParent,eRedraw);
-  //}
+  gslc_tsElem*  pElem = gslc_GetElemFromRef(pGui,pElemRef);
+  if (pElem->pElemRefParent != NULL) {
+    gslc_ElemSetRedraw(pGui,pElem->pElemRefParent,eRedraw);
+  }
 #endif
 }
 
@@ -2974,31 +3284,6 @@ void gslc_ElemSetVisible(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bVisible
     gslc_ElemSetRedraw(pGui,pElemRef,GSLC_REDRAW_FULL);
   }
 
-  // Request page redraw if element is becoming hidden
-  // - Determine minimum page redraw required to display
-  //   background that may be revealed behind hidden element
-  if ((!bVisible) && (bVisibleOld)) {
-    // Current method: Force redraw now with clipping active
-
-    // TODO: Enable deferred PageRedrawGo() by saving clip
-    //       region for later and/or mark which element is
-    //       being hidden.
-
-    // TODO: When deferring PageRedrawGo(), we can also support
-    //       more intelligent redraw calculations that will
-    //       only attempt to redraw elements that are not
-    //       either a) fully outside of the clipping rect or
-    //       b) elements that are fully obscured by elements
-    //       with a higher Z-index. Doing so should speed up
-    //       redraw during the element-hide operation and
-    //       avoid the overdrawing behavior.
-
-    gslc_tsRect rRect = pElem->rElem;
-    gslc_SetClipRect(pGui, &rRect);
-    gslc_PageRedrawSet(pGui, true);
-    gslc_PageRedrawGo(pGui);
-    gslc_SetClipRect(pGui, NULL);
-  }
 }
 
 bool gslc_ElemGetVisible(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef)
@@ -3045,6 +3330,15 @@ void gslc_ElemSetClickEn(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bClickEn
   }
   // No need to call ElemSetRedraw() as we aren't changing a visual characteristic
 }
+
+void gslc_ElemSetTouchFunc(gslc_tsGui* pGui, gslc_tsElemRef* pElemRef, GSLC_CB_TOUCH funcCb)
+{
+  gslc_tsElem* pElem = gslc_GetElemFromRefD(pGui, pElemRef, __LINE__);
+  if (!pElem) return;
+
+  pElem->pfuncXTouch = funcCb;
+}
+
 
 void gslc_ElemSetStyleFrom(gslc_tsGui* pGui,gslc_tsElemRef* pElemRefSrc,gslc_tsElemRef* pElemRefDest)
 {
@@ -4004,8 +4298,14 @@ gslc_tsElemRef* gslc_CollectElemAdd(gslc_tsGui* pGui,gslc_tsCollect* pCollect,co
     pCollect->nElemRefCnt++;
   }
 
+  // Fetch a pointer to the element reference array entry
+  gslc_tsElemRef* pElemRef = &(pCollect->asElemRef[nElemRefInd]);
+
+  // Mark any newly added element as requiring redraw
+  gslc_ElemSetRedraw(pGui,pElemRef,GSLC_REDRAW_FULL);
+
   // Return the new element reference
-  return &(pCollect->asElemRef[nElemRefInd]);
+  return pElemRef;
 }
 
 bool gslc_CollectGetRedraw(gslc_tsGui* pGui,gslc_tsCollect* pCollect)
@@ -4062,6 +4362,10 @@ gslc_tsElemRef* gslc_ElemAdd(gslc_tsGui* pGui,int16_t nPageId,gslc_tsElem* pElem
 
   gslc_tsCollect* pCollect = &pPage->sCollect;
   gslc_tsElemRef* pElemRefAdd = gslc_CollectElemAdd(pGui,pCollect,pElem,eFlags);
+
+  // Update the page's bounding rect
+  gslc_UnionRect(&(pPage->rBounds), pElem->rElem);
+
   return pElemRefAdd;
 }
 
@@ -4113,7 +4417,12 @@ bool gslc_SetBkgndColor(gslc_tsGui* pGui,gslc_tsColor nCol)
 bool gslc_GuiRotate(gslc_tsGui* pGui, uint8_t nRotation)
 {
   // Simple wrapper for driver-specific rotation
-  return gslc_DrvRotate(pGui,nRotation);
+  bool bOk = gslc_DrvRotate(pGui,nRotation);
+
+  // Invalidate the new screen dimensions
+  gslc_InvalidateRgnScreen(pGui);
+
+  return bOk;
 }
 
 // Trigger a touch event on an element
@@ -4193,6 +4502,7 @@ void gslc_ResetFont(gslc_tsFont* pFont)
   }
   pFont->nId            = GSLC_FONT_NONE;
   pFont->eFontRefType   = GSLC_FONTREF_FNAME;
+  pFont->eFontRefMode   = GSLC_FONTREF_MODE_DEFAULT;
   pFont->pvFont         = NULL;
   pFont->nSize          = 0;
 }

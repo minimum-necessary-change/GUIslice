@@ -45,8 +45,13 @@
 #include <stdio.h>
 
 #if defined(DRV_DISP_ADAGFX)
-  #include <Adafruit_GFX.h>
-  #include <gfxfont.h>
+
+  // Almost all GFX-compatible libraries depend on Adafruit-GFX
+  // There are a couple exceptions that do not require it
+  #if !defined(DRV_DISP_ADAGFX_ILI9341_T3)
+    #include <Adafruit_GFX.h>
+    #include <gfxfont.h>
+  #endif // ILI9341_T3
 
   // Now configure specific display driver for Adafruit-GFX
   #if defined(DRV_DISP_ADAGFX_ILI9341)
@@ -57,6 +62,12 @@
     #include <SPI.h>
   #elif defined(DRV_DISP_ADAGFX_ILI9341_8BIT)
     #include <Adafruit_TFTLCD.h>
+    #if (GSLC_SD_EN)
+      #include <SD.h>   // Include support for SD card access
+    #endif
+    #include <SPI.h>
+  #elif defined(DRV_DISP_ADAGFX_ILI9341_T3)
+    #include <ILI9341_t3.h>
     #if (GSLC_SD_EN)
       #include <SD.h>   // Include support for SD card access
     #endif
@@ -95,6 +106,14 @@
 
   #else
     #error "CONFIG: Need to enable a supported DRV_DISP_ADAGFX_* option in GUIslice_config_ard.h"
+  #endif
+
+  // Load any additional drivers
+  #ifdef DRV_DISP_ADAGFX_SEESAW_18
+    #define DRV_DISP_ADAGFX_SEESAW
+    #include <Adafruit_seesaw.h>
+    // Seesaw config specific to Adafruit 1.8" TFT shield
+    #include <Adafruit_TFTShield18.h>
   #endif
 
 #elif defined(DRV_DISP_ADAGFX_AS)
@@ -157,6 +176,18 @@ extern "C" {
   Adafruit_TFTLCD m_disp = Adafruit_TFTLCD (ADAGFX_PIN_CS, ADAGFX_PIN_DC, ADAGFX_PIN_WR, ADAGFX_PIN_RD, ADAGFX_PIN_RST);
 
 // ------------------------------------------------------------------------
+#elif defined(DRV_DISP_ADAGFX_ILI9341_T3)
+  #if (ADAGFX_SPI_HW)
+    // Default hardware SPI pinout
+    const char* m_acDrvDisp = "ADA_ILI9341_T3(SPI-HW)";
+    ILI9341_t3 m_disp = ILI9341_t3(ADAGFX_PIN_CS, ADAGFX_PIN_DC, ADAGFX_PIN_RST);
+  #else
+    // Alternate hardware SPI pinout
+    const char* m_acDrvDisp = "ADA_ILI9341_T3(SPI-HW-Alt)";
+    ILI9341_t3 m_disp = ILI9341_t3 (ADAGFX_PIN_CS, ADAGFX_PIN_DC, ADAGFX_PIN_RST, ADAGFX_PIN_MOSI, ADAGFX_PIN_CLK, ADAGFX_PIN_MISO);
+  #endif
+
+// ------------------------------------------------------------------------
 #elif defined(DRV_DISP_ADAGFX_ILI9341_STM)
   #if (ADAGFX_SPI_HW) // Use hardware SPI or software SPI (with custom pins)
     const char* m_acDrvDisp = "ADA_ILI9341_STM(SPI-HW)";
@@ -189,6 +220,10 @@ extern "C" {
   #else
     const char* m_acDrvDisp = "ADA_ST7735(SPI-SW)";
     Adafruit_ST7735 m_disp(ADAGFX_PIN_CS, ADAGFX_PIN_DC, ADAGFX_PIN_MOSI, ADAGFX_PIN_CLK, ADAGFX_PIN_RST);
+  #endif
+
+  #ifdef DRV_DISP_ADAGFX_SEESAW_18
+    Adafruit_TFTShield18 m_seesaw;
   #endif
 
 // ------------------------------------------------------------------------
@@ -294,8 +329,6 @@ extern "C" {
 bool gslc_DrvInit(gslc_tsGui* pGui)
 {
 
-  bool bInitOk = true;
-
   // Report any debug info if enabled
   #if defined(DBG_DRIVER)
   // TODO
@@ -311,7 +344,33 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
     // image in the controller graphics RAM
     pGui->bRedrawPartialEn = true;
 
+    // Support any additional initialization prior to display init
+    #ifdef DRV_DISP_ADAGFX_SEESAW
+      // Special initialization for Adafruit Seesaw chip
+      if (!m_seesaw.begin()) {
+       GSLC_DEBUG_PRINT("ERROR: Adafruit seesaw not initialized", "");
+      } else {
+        #if !defined(INIT_MSG_DISABLE)
+        GSLC_DEBUG_PRINT("- Adafruit seesaw OK\n", "");
+        #endif
+      }
+      m_seesaw.setBacklight(TFTSHIELD_BACKLIGHT_OFF);
+      m_seesaw.tftReset();
+      m_seesaw.setBacklight(TFTSHIELD_BACKLIGHT_ON);
+    #endif
+
+    // Perform any display initialization
     #if defined(DRV_DISP_ADAGFX_ILI9341) || defined(DRV_DISP_ADAGFX_ILI9341_STM)
+
+      #if (ADAGFX_SPI_SET) // Use extra SPI initialization (eg. on Teensy devices)
+        // TODO: Consider check for GSLC_DEV_TEENSY
+        // If ADAGFX_SPI_SET is enabled, then perform additional SPI initialization.
+        // This may be required for certain pinouts with Teensy 3 devices.
+        // If enabled, it must be done ahead of m_disp.begin()
+        SPI.setMOSI(ADAGFX_PIN_MOSI);
+        SPI.setSCK(ADAGFX_PIN_CLK);
+      #endif
+
       m_disp.begin();
       m_disp.readcommand8(ILI9341_RDMODE);
       m_disp.readcommand8(ILI9341_RDMADCTL);
@@ -323,10 +382,14 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
       uint16_t identifier = m_disp.readID();
       m_disp.begin(identifier);
 
+    #elif defined(DRV_DISP_ADAGFX_ILI9341_T3)
+      m_disp.begin();
+
     #elif defined(DRV_DISP_ADAGFX_SSD1306)
       m_disp.begin(SSD1306_SWITCHCAPVCC);
 
     #elif defined(DRV_DISP_ADAGFX_ST7735)
+
       // ST7735 requires additional initialization depending on
       // display type. Enable the user to specify the
       // configuration via DRV_DISP_ADAGFX_ST7735_INIT.
@@ -350,6 +413,7 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
       // RA8875 requires additional initialization depending on
       // display type. Enable the user to specify the
       // configuration via DRV_DISP_ADAGFX_RA8875_INIT.
+      bool bInitOk = true;
       #ifndef DRV_DISP_ADAGFX_RA8875_INIT
         bInitOk = m_disp.begin(RA8875_800x480);  // Default to 800x480
       #else
@@ -370,6 +434,9 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
       // Support override for MCUFRIEND ID auto-detection
       #if defined(DRV_DISP_ADAGFX_MCUFRIEND_FORCE)
         m_disp.begin(DRV_DISP_ADAGFX_MCUFRIEND_FORCE);
+        #if !defined(INIT_MSG_DISABLE)
+        GSLC_DEBUG_PRINT("- MCUfriend ID forced\n","");
+        #endif
       #else
         m_disp.begin(identifier);
       #endif
@@ -528,9 +595,58 @@ void gslc_DrvFontsDestruct(gslc_tsGui* pGui)
 bool gslc_DrvGetTxtSize(gslc_tsGui* pGui,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,
         int16_t* pnTxtX,int16_t* pnTxtY,uint16_t* pnTxtSzW,uint16_t* pnTxtSzH)
 {
-  uint16_t  nTxtLen   = 0;
-  uint16_t  nTxtScale = pFont->nSize;
+  uint16_t  nTxtScale = 0;
 
+#if defined(DRV_DISP_ADAGFX_ILI9341_T3)
+  // Use PaulStoffregen/ILI9341_t3
+  //
+  // - IMPORTANT NOTE: Recent version of ILI9341_t3 library is required
+  // - If you see a compilation error such as the following, then you
+  //   need to update your ILI9341_t3 library to a more recent version:
+  //     error: 'class ILI9341_t3' has no member named 'measureTextWidth'
+  //     error: 'class ILI9341_t3' has no member named 'measureTextHeight'
+  // - To update ILI9341_t3 to the latest, please follow the guidance here:
+  //    https://github.com/ImpulseAdventure/GUIslice/wiki/Install-ILI9341_t3-for-Teensy
+
+  // Fetch the string dimensions
+  // - Note that the following APIs (measureTextHeight / measureTextWidth)
+  //   were recently added to ILI9341_t3, so the latest version of
+  //   the library from GitHub should be used.
+
+  const ILI9341_t3_font_t* pT3Font = NULL;
+  switch (pFont->eFontRefMode) {
+  case GSLC_FONTREF_MODE_DEFAULT:
+  default:
+    // Default Adafruit-GFX font
+    m_disp.setFontAdafruit();
+    break;
+  case GSLC_FONTREF_MODE_1:
+    // T3 font
+    pT3Font = (const ILI9341_t3_font_t*)(pFont->pvFont);
+    m_disp.setFont(*pT3Font);
+    break;
+  }
+
+  nTxtScale = pFont->nSize;
+  m_disp.setTextSize(nTxtScale);
+
+  // Fetch the font sizing
+  *pnTxtSzW = m_disp.measureTextWidth(pStr,0);  // NOTE: If compile error, see note https://github.com/ImpulseAdventure/GUIslice/wiki/Install-ILI9341_t3-for-Teensy
+  *pnTxtSzH = m_disp.measureTextHeight(pStr,0); // NOTE: If compile error, see note https://github.com/ImpulseAdventure/GUIslice/wiki/Install-ILI9341_t3-for-Teensy
+
+  // Debug: report font sizing
+  // GSLC_DEBUG_PRINT("DBG:GetTxtSize: [%s] w=%d h=%d scale=%d\n",
+  //   pStr,*pnTxtSzW,*pnTxtSzH,nTxtScale);
+
+  // TODO: Support for extracting baseline info from Teensy fonts?
+  *pnTxtX = 0;
+  *pnTxtY = 0;
+
+  return true;
+
+#else
+
+  nTxtScale = pFont->nSize;
   m_disp.setFont((const GFXfont *)pFont->pvFont);
   m_disp.setTextSize(nTxtScale);
 
@@ -540,7 +656,7 @@ bool gslc_DrvGetTxtSize(gslc_tsGui* pGui,gslc_tsFont* pFont,const char* pStr,gsl
 
   } else if ((eTxtFlags & GSLC_TXT_MEM) == GSLC_TXT_MEM_PROG) {
 #if (GSLC_USE_PROGMEM)
-    nTxtLen = strlen_P(pStr);
+    uint16_t nTxtLen = strlen_P(pStr);
     char tempStr[nTxtLen+1];
     strncpy_P(tempStr,pStr,nTxtLen);
     tempStr[nTxtLen] = '\0';  // Force termination
@@ -562,17 +678,35 @@ bool gslc_DrvGetTxtSize(gslc_tsGui* pGui,gslc_tsFont* pFont,const char* pStr,gsl
 
   m_disp.setFont();
   return true;
+
+#endif // DRV_DISP_*
+
 }
 
 bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt, gslc_tsColor colBg=GSLC_COL_BLACK)
 {
   uint16_t  nTxtScale = pFont->nSize;
   uint16_t  nColRaw = gslc_DrvAdaptColorToRaw(colTxt);
-  uint16_t  nColBgRaw = gslc_DrvAdaptColorToRaw(colBg);
   char      ch;
 
   // Initialize the font and positioning
+#if defined(DRV_DISP_ADAGFX_ILI9341_T3)
+  const ILI9341_t3_font_t* pT3Font = NULL;
+  switch (pFont->eFontRefMode) {
+  case GSLC_FONTREF_MODE_DEFAULT:
+  default:
+    // Default Adafruit-GFX font
+    m_disp.setFontAdafruit();
+    break;
+  case GSLC_FONTREF_MODE_1:
+    // T3 font
+    pT3Font = (const ILI9341_t3_font_t*)(pFont->pvFont);
+    m_disp.setFont(*pT3Font);
+    break;
+  }
+#else
   m_disp.setFont((const GFXfont *)pFont->pvFont);
+#endif
   m_disp.setTextColor(nColRaw);
   m_disp.setCursor(nTxtX,nTxtY);
   m_disp.setTextSize(nTxtScale);
@@ -586,6 +720,7 @@ bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* p
     bool bInternal8875Font = false;
 
     if (bInternal8875Font) {
+      uint16_t nColBgRaw = gslc_DrvAdaptColorToRaw(colBg);
       // Enter text mode when using RA8875 built-in fonts
       m_disp.textMode();
       nTxtScale = (nTxtScale > 0) ? nTxtScale : 0;
@@ -663,7 +798,11 @@ bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* p
   #endif // DRV_DISP_ADAGFX_RA8875
 
   // Restore the font
+#if defined(DRV_DISP_ADAGFX_ILI9341_T3)
+  // TODO
+#else
   m_disp.setFont();
+#endif
 
   return true;
 }
@@ -725,6 +864,16 @@ bool gslc_DrvDrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
   return true;
 }
 
+bool gslc_DrvDrawFillRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadius,gslc_tsColor nCol)
+{
+  // TODO: Support GSLC_CLIP_EN
+  // - Would need to determine how to clip the rounded corners
+  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
+  m_disp.fillRoundRect(rRect.x,rRect.y,rRect.w,rRect.h,nRadius,nColRaw);
+  return true;
+}
+
+
 bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 {
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
@@ -762,6 +911,16 @@ bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 #endif
   return true;
 }
+
+bool gslc_DrvDrawFrameRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadius,gslc_tsColor nCol)
+{
+  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
+  // TODO: Support GSLC_CLIP_EN
+  // - Would need to determine how to clip the rounded corners
+  m_disp.drawRoundRect(rRect.x,rRect.y,rRect.w,rRect.h,nRadius,nColRaw);
+  return true;
+}
+
 
 
 bool gslc_DrvDrawLine(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,int16_t nY1,gslc_tsColor nCol)
@@ -954,6 +1113,7 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
   int      w, h, row, col;
   uint8_t  r, g, b;
   uint32_t pos = 0, startTime = millis();
+  (void)startTime; // Unused
 
   if((x >= pGui->nDispW) || (y >= pGui->nDispH)) return;
 
@@ -970,12 +1130,14 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
   // Parse BMP header
   if(gslc_DrvRead16SD(bmpFile) == 0x4D42) { // BMP signature
     uint32_t nFileSize = gslc_DrvRead32SD(bmpFile);
+    (void)nFileSize; // Unused
     //Serial.print("File size: "); Serial.println(nFileSize);
     (void)gslc_DrvRead32SD(bmpFile); // Read & ignore creator bytes
     bmpImageoffset = gslc_DrvRead32SD(bmpFile); // Start of image data
     //Serial.print("Image Offset: "); Serial.println(bmpImageoffset, DEC);
     // Read DIB header
     uint32_t nHdrSize = gslc_DrvRead32SD(bmpFile);
+    (void)nHdrSize; // Unused
     //Serial.print("Header size: "); Serial.println(nHdrSize);
     bmpWidth  = gslc_DrvRead32SD(bmpFile);
     bmpHeight = gslc_DrvRead32SD(bmpFile);
@@ -1071,7 +1233,7 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
   #if defined(DBG_DRIVER)
   char addr[6];
   GSLC_DEBUG_PRINT("DBG: DrvDrawImage() with ImgBuf address=","");
-  sprintf(addr,"%04X",sImgRef.pImgBuf);
+  sprintf(addr,"%04X",(unsigned int)sImgRef.pImgBuf);
   GSLC_DEBUG_PRINT("%s\n",addr);
   #endif
 
@@ -1202,25 +1364,29 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
   // Enable Adafruit_TouchScreen workarounds
   // --------------------------------------------------------------------------
 
-  // Enable workaround for Adafruit_TouchScreen pressure readings?
-  // - See Issue #96
-  #define FIX_4WIRE // Comment out to disable
+  // NOTE: The Adafruit_TouchScreen is not natively compatible with certain
+  //       devices (eg. ESP32) and also doesn't safeguard against pin-sharing
+  //       conflicts. For these and some other issues, the following workarounds
+  //       are optionally enabled.
+
+  // Enable workaround for ambiguity in Adafruit_TouchScreen pressure readings
+  // - See https://github.com/ImpulseAdventure/GUIslice/issues/96
+  #define FIX_4WIRE_Z // Comment out to disable
 
   // Enable workaround for Adafruit_TouchScreen getPoint() altering
   // the pin state and not restoring it. Without working around this,
   // the touch handler may interfere with displays that share pins.
-  #define FIX_PIN_STATE // Comment out to disable
+  #define FIX_4WIRE_PIN_STATE // Comment out to disable
 
   // --------------------------------------------------------------------------
 
-  // Disable the Adafruit_TouchScreen FIX_PIN_STATE mode in
-  // STM32 as we haven't implemented the equivalent pin save/restore
-  // code yet.
+  // Disable certain workarounds for Adafruit_TouchScreen in STM32 mode
+  // as we haven't implemented the equivalent pin save/restore code yet.
   #if defined(ARDUINO_ARCH_STM32) || defined(__STM32F1__)
-    #undef FIX_PIN_STATE
+    #undef FIX_4WIRE_PIN_STATE
   #endif
 
-  #if defined(FIX_PIN_STATE)
+  #if defined(FIX_4WIRE_PIN_STATE)
   // NOTE: The Adafruit_TouchScreen library alters the state of several
   //       pins during the course of reading the touch coordinates and
   //       pressure. Unfortunately, it does not restore the prior state
@@ -1273,10 +1439,11 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
     if (sPinState.nMode == OUTPUT) digitalWrite(nPin,sPinState.bIsHigh);
   }
 
-  #endif // FIX_PIN_STATE
+  #endif // FIX_4WIRE_PIN_STATE
+
+  // --------------------------------------------------------------------------
 
 #endif // DRV_TOUCH_ADA_SIMPLE
-
 
 
 #if defined(DRV_TOUCH_TYPE_EXTERNAL)
@@ -1453,7 +1620,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
   uint16_t  nRawX,nRawY;
   int16_t   nRawPress;
 
-  #if defined(FIX_PIN_STATE)
+  #if defined(FIX_4WIRE_PIN_STATE)
     // Saved pin state
     gslc_tsPinState   sPinStateXP, sPinStateXM, sPinStateYP, sPinStateYM;
 
@@ -1464,7 +1631,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
     gslc_TDrvSavePinState(ADATOUCH_PIN_XM, sPinStateXM);
     gslc_TDrvSavePinState(ADATOUCH_PIN_YP, sPinStateYP);
     gslc_TDrvSavePinState(ADATOUCH_PIN_YM, sPinStateYM);
-  #endif // FIX_PIN_STATE
+  #endif // FIX_4WIRE_PIN_STATE
   
   // Perform the polling of touch coordinate & pressure
   TSPoint p = m_touch.getPoint();
@@ -1491,7 +1658,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
       // Wasn't touched before; do nothing
     } else {
 
-      #if !defined(FIX_4WIRE) // Original behavior without touch pressure workaround
+      #if !defined(FIX_4WIRE_Z) // Original behavior without touch pressure workaround
 
       // Indicate old coordinate but with pressure=0
       m_nLastRawPress = 0;
@@ -1554,21 +1721,21 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
             m_nLastRawPress,m_nLastRawX,m_nLastRawY);
         #endif
       } // nPressCur
-      #endif // FIX_4WIRE
+      #endif // FIX_4WIRE_Z
 
       // TODO: Implement touch debouncing
 
     } // m_bLastTouched
   }
 
-  #if defined(FIX_PIN_STATE)
+  #if defined(FIX_4WIRE_PIN_STATE)
     // Now that we have completed our polling into Adafruit_TouchScreen,
     // we need to restore the original pin state.
     gslc_TDrvRestorePinState(ADATOUCH_PIN_XP, sPinStateXP);
     gslc_TDrvRestorePinState(ADATOUCH_PIN_XM, sPinStateXM);
     gslc_TDrvRestorePinState(ADATOUCH_PIN_YP, sPinStateYP);
     gslc_TDrvRestorePinState(ADATOUCH_PIN_YM, sPinStateYM);
-  #endif // FIX_PIN_STATE
+  #endif // FIX_4WIRE_PIN_STATE
 
   // ----------------------------------------------------------------
   #elif defined(DRV_TOUCH_XPT2046_STM)
@@ -1716,6 +1883,44 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
     // looks for GPIO inputs before calling TDrvGetTouch().
     // bValid will default to false
 
+
+  // Assign defaults
+  *pnX = 0;
+  *pnY = 0;
+  *pnPress = 0;
+
+  *peInputEvent = GSLC_INPUT_NONE;
+  *pnInputVal = 0;
+
+  #ifdef DRV_DISP_ADAGFX_SEESAW
+    // Keep track of last value to support simple debouncing
+    static uint32_t nButtonsLast = 0xFFFFFFFF;     // Saved last value (static to preserve b/w calls)
+    uint32_t nButtonsCur = m_seesaw.readButtons(); // Current value (note active low)
+    if ((nButtonsLast & TFTSHIELD_BUTTON_UP) && !(nButtonsCur & TFTSHIELD_BUTTON_UP)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_UP;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_DOWN) && !(nButtonsCur & TFTSHIELD_BUTTON_DOWN)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_DOWN;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_LEFT) && !(nButtonsCur & TFTSHIELD_BUTTON_LEFT)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_LEFT;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_RIGHT) && !(nButtonsCur & TFTSHIELD_BUTTON_RIGHT)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_RIGHT;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_IN) && !(nButtonsCur & TFTSHIELD_BUTTON_IN)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_SEL;
+    }
+    // Save button state so that transitions can be detected
+    // during the next pass.
+    nButtonsLast = nButtonsCur;
+  #endif
+
+
+  // If we reached here, then we had a button event
+  return true;
+
   // ----------------------------------------------------------------
   #endif // DRV_TOUCH_*
 
@@ -1755,6 +1960,10 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
         // - Swap & Flip done to output of map/constrain according
         //   to GSLC_ROTATE
         //
+        #if defined(DBG_TOUCH)
+          GSLC_DEBUG_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+          GSLC_DEBUG_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+        #endif
         nOutputX = map(nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
         nOutputY = map(nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
         // Perform constraining to OUTPUT boundaries
@@ -1770,7 +1979,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
       nOutputX = nInputX;
       nOutputY = nInputY;
     #endif  // DRV_TOUCH_TYPE_RES
-	
+  
     #ifdef DBG_TOUCH
     GSLC_DEBUG_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
     GSLC_DEBUG_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
@@ -1843,6 +2052,7 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
   if ((nRotation == 1) || (nRotation == 3)) {
     bSwap = true;
   }
+  (void)bSwap; // May be Unused in some driver modes
 
   // Did the orientation change?
   if (nRotation == pGui->nRotation) {
@@ -1856,7 +2066,7 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
 
   // Inform the display to adjust the orientation and
   // update the saved display dimensions
-  #if defined(DRV_DISP_ADAGFX_ILI9341) || defined(DRV_DISP_ADAGFX_ILI9341_STM)
+  #if defined(DRV_DISP_ADAGFX_ILI9341) || defined(DRV_DISP_ADAGFX_ILI9341_STM) || defined(DRV_DISP_ADAGFX_ILI9341_T3)
     pGui->nDisp0W = ILI9341_TFTWIDTH;
     pGui->nDisp0H = ILI9341_TFTHEIGHT;
     m_disp.setRotation(pGui->nRotation);
@@ -1940,6 +2150,11 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
     m_disp.setRotation(pGui->nRotation);
     pGui->nDispW = m_disp.width();
     pGui->nDispH = m_disp.height();
+
+  #else
+    // Report error for unsupported display mode
+    // - If we don't trap this condition, the GUI dimensions will be incorrect
+    #error "ERROR: DRV_DISP_* mode not supported in DrvRotate initialization"
 
   #endif
 

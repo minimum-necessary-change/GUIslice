@@ -24,13 +24,12 @@
 // Enumerations for pages, elements, fonts, images
 enum {E_PG_MAIN};
 enum {E_ELEM_BOX,E_ELEM_BTN_QUIT};
-enum {E_FONT_BTN};
+enum {E_FONT_BTN,MAX_FONT}; // Use separate enum for fonts, MAX_FONT at end
 
 bool    m_bQuit = false;
 
 // Instantiate the GUI
 #define MAX_PAGE            1
-#define MAX_FONT            1
 #define MAX_ELEM_PG_MAIN    2
 
 gslc_tsGui                  m_gui;
@@ -65,7 +64,7 @@ void setup()
   if (!gslc_Init(&m_gui,&m_drv,m_asPage,MAX_PAGE,m_asFont,MAX_FONT)) { return; }
 
   // Load Fonts
-  if (!gslc_FontAdd(&m_gui,E_FONT_BTN,GSLC_FONTREF_PTR,NULL,1)) { return; }
+  if (!gslc_FontSet(&m_gui,E_FONT_BTN,GSLC_FONTREF_PTR,NULL,1)) { return; }
 
   // -----------------------------------
   // Create page elements

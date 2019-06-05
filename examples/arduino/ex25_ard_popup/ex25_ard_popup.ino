@@ -22,11 +22,20 @@
 #include "GUIslice_ex.h"
 #include "GUIslice_drv.h"
 
-#include <Adafruit_GFX.h>
+
+// Determine whether to load Adafruit-GFX extra fonts or Teensy fonts
+#if defined(DRV_DISP_ADAGFX_ILI9341_T3)
+  #define FONTS_T3
+#endif
 
 // Note that font files are located within the Adafruit-GFX library folder:
 //<Fonts !Start!>
-#include "Fonts/FreeSans9pt7b.h"
+#if defined(FONTS_T3)
+  #include <font_Arial.h>
+#else
+  #include <Adafruit_GFX.h>
+  #include "Fonts/FreeSans9pt7b.h"
+#endif
 //<Fonts !End!>
 
 // ------------------------------------------------
@@ -41,7 +50,7 @@
 //<Enum !Start!>
 enum { E_PG_MAIN, E_PG_POPUP };
 enum { E_BTN_CANCEL, E_BTN_OK, E_BTN_QUIT, E_PROGRESS, E_TXT_STATUS };
-enum { E_FONT_SANS1, E_FONT_TXT2 };
+enum { E_FONT_SANS1, E_FONT_TXT2, MAX_FONT }; // Use separate enum for fonts, MAX_FONT at end
 //<Enum !End!>
 
 // ------------------------------------------------
@@ -51,7 +60,6 @@ enum { E_FONT_SANS1, E_FONT_TXT2 };
 // Define the maximum number of elements per page
 //<ElementDefines !Start!>
 #define MAX_PAGE                2
-#define MAX_FONT                2
 #define MAX_ELEM_PG_MAIN        3
 #define MAX_ELEM_PG_MAIN_RAM MAX_ELEM_PG_MAIN
 #define MAX_ELEM_PG_POPUP       5
@@ -225,9 +233,14 @@ void setup()
   // ------------------------------------------------
   // Load Fonts
   // ------------------------------------------------
-//<Load_Fonts !Start!>
-  if (!gslc_FontAdd(&m_gui, E_FONT_SANS1, GSLC_FONTREF_PTR, &FreeSans9pt7b, 1)) { return; }
-  if (!gslc_FontAdd(&m_gui, E_FONT_TXT2, GSLC_FONTREF_PTR, NULL, 2)) { return; }
+  //<Load_Fonts !Start!>
+#if defined(FONTS_T3)
+  if (!gslc_FontSet(&m_gui, E_FONT_SANS1, GSLC_FONTREF_PTR, &Arial_12, 1)) { return; }
+  if (!gslc_FontSet(&m_gui, E_FONT_TXT2, GSLC_FONTREF_PTR, NULL, 2)) { return; }
+#else
+  if (!gslc_FontSet(&m_gui, E_FONT_SANS1, GSLC_FONTREF_PTR, &FreeSans9pt7b, 1)) { return; }
+  if (!gslc_FontSet(&m_gui, E_FONT_TXT2, GSLC_FONTREF_PTR, NULL, 2)) { return; }
+#endif
   //<Load_Fonts !End!>
 
   // ------------------------------------------------
@@ -269,4 +282,3 @@ void loop()
   gslc_Update(&m_gui);
 
 }
-
