@@ -87,7 +87,7 @@ extern "C" {
 
 
   // SD Card
-  #define ADAGFX_PIN_SDCS     4     // SD card chip select (if GSLC_SD_EN=1)
+  #define ADAGFX_PIN_SDCS     PA15    // SD card chip select (if GSLC_SD_EN=1)
 
 
 
@@ -135,10 +135,10 @@ extern "C" {
   //     ADATOUCH_PIN_XP      // "X+": Can be a digital pin
 
   // Pin connections from diag_ard_touch_detect:
-  #define ADATOUCH_PIN_YP     PB1
-  #define ADATOUCH_PIN_XM     PB0
-  #define ADATOUCH_PIN_YM     PB15
-  #define ADATOUCH_PIN_XP     PB14
+  #define ADATOUCH_PIN_YP     PA6
+  #define ADATOUCH_PIN_XM     PA7
+  #define ADATOUCH_PIN_YM     PB7
+  #define ADATOUCH_PIN_XP     PB6
 
 
   // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
@@ -280,12 +280,15 @@ extern "C" {
   // -----------------------------------------------------------------------------
 
   // Error reporting
-  // - Set DEBUG_ERR to 1 to enable error reporting via the Serial connection
+  // - Set DEBUG_ERR to >0 to enable error reporting via the Serial connection
   // - Enabling DEBUG_ERR increases FLASH memory consumption which may be
   //   limited on the baseline Arduino (ATmega328P) devices.
+  //   - DEBUG_ERR 0 = Disable all error messaging
+  //   - DEBUG_ERR 1 = Enable critical error messaging (eg. init)
+  //   - DEBUG_ERR 2 = Enable verbose error messaging (eg. bad parameters, etc.)
   // - For baseline Arduino UNO, recommended to disable this after one has
   //   confirmed basic operation of the library is successful.
-  #define DEBUG_ERR               1   // 1 to enable, 0 to disable
+  #define DEBUG_ERR               1   // 1,2 to enable, 0 to disable
 
   // Debug initialization message
   // - By default, GUIslice outputs a message in DEBUG_ERR mode

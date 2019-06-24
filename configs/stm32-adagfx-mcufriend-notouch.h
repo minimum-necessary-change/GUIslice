@@ -3,8 +3,8 @@
 
 // =============================================================================
 // GUIslice library (example user configuration #???) for:
-//   - CPU:     Arduino UNO / MEGA / etc
-//   - Display: ILI9341
+//   - CPU:     STM32
+//   - Display: MCUFRIEND
 //   - Touch:   None
 //   - Wiring:  Custom breakout
 //              - Pinout:
@@ -70,7 +70,8 @@ extern "C" {
   //   and should not require modifications for this example config
   // -----------------------------------------------------------------------------
   #define DRV_DISP_ADAGFX           // Adafruit-GFX library
-  #define DRV_DISP_ADAGFX_ILI9341   // Adafruit ILI9341
+  #define DRV_DISP_ADAGFX_MCUFRIEND // prenticedavid/MCUFRIEND_kbv
+  //#define DRV_DISP_ADAGFX_MCUFRIEND_FORCE  0x9481 // Optionally override the MCUFRIEND initialization ID
   #define DRV_TOUCH_NONE            // No touch enabled
 
 
@@ -78,23 +79,9 @@ extern "C" {
   // SECTION 2: Pinout
   // -----------------------------------------------------------------------------
 
-  // For shields, the following pinouts are typically hardcoded
-  #define ADAGFX_PIN_CS       10    // Display chip select
-  #define ADAGFX_PIN_DC       9     // Display SPI data/command
-  #define ADAGFX_PIN_RST      0     // Display Reset
-
-  // Display interface type
-  #define ADAGFX_SPI_HW       1	    // Display uses SPI interface: 1=hardware 0=software
-
-  // Display interface software SPI
-  // - Hardware SPI: the following definitions are unused
-  // - Software SPI: the following pins need to be defined
-  #define ADAGFX_PIN_MOSI     11
-  #define ADAGFX_PIN_MISO     12
-  #define ADAGFX_PIN_CLK      13
 
   // SD Card
-  #define ADAGFX_PIN_SDCS     4     // SD card chip select (if GSLC_SD_EN=1)
+  #define ADAGFX_PIN_SDCS    PA15    // SD card chip select (if GSLC_SD_EN=1)
 
 
 
@@ -185,7 +172,7 @@ extern "C" {
   #define GSLC_USE_FLOAT        0   // 1=Use floating pt library, 0=Fixed-point lookup tables
 
   #define GSLC_DEV_TOUCH ""
-  #define GSLC_USE_PROGMEM      1
+  #define GSLC_USE_PROGMEM      0
 
   #define GSLC_LOCAL_STR        0   // 1=Use local strings (in element array), 0=External
   #define GSLC_LOCAL_STR_LEN    30  // Max string length of text elements

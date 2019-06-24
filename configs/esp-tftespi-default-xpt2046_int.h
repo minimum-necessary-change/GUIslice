@@ -132,15 +132,19 @@ extern "C" {
 
   // Calibration data from TFT_eSPI for integrated XPT2046
   // NOTE: The TFT_ESPI_TOUCH_CALIB calibration settings will be unused as we will
-	//       bypass TFT_eSPI's calibration and use raw touch values instead.
-  //       Reference: https://github.com/Bodmer/TFT_eSPI/issues/365
-  #define TFT_ESPI_TOUCH_CALIB { 321,3498,280,3593,3 }
+  //       bypass TFT_eSPI's calibration and use raw touch values instead.
+  //       Reference: https://github.com/ImpulseAdventure/GUIslice/pull/143
+  #define TFT_ESPI_TOUCH_CALIB { 321,3498,280,3593,3 } // UNUSED
 
   // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
   // SECTION 4D: Additional touch configuration
   // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
 
   // Define pressure threshold for detecting a touch
+  // - Specifying this range helps eliminate some erroneous touch events
+  //   resulting from noise in the touch overlay detection
+  // - MIN should be less than the smallest Z value reported during calibration
+  // - MAX should be more than the largest Z value reported during calibration
   #define ADATOUCH_PRESS_MIN  200
   #define ADATOUCH_PRESS_MAX  4000
 
@@ -151,12 +155,15 @@ extern "C" {
   // -----------------------------------------------------------------------------
 
   // Error reporting
-  // - Set DEBUG_ERR to 1 to enable error reporting via the Serial connection
+  // - Set DEBUG_ERR to >0 to enable error reporting via the Serial connection
   // - Enabling DEBUG_ERR increases FLASH memory consumption which may be
   //   limited on the baseline Arduino (ATmega328P) devices.
+  //   - DEBUG_ERR 0 = Disable all error messaging
+  //   - DEBUG_ERR 1 = Enable critical error messaging (eg. init)
+  //   - DEBUG_ERR 2 = Enable verbose error messaging (eg. bad parameters, etc.)
   // - For baseline Arduino UNO, recommended to disable this after one has
   //   confirmed basic operation of the library is successful.
-  #define DEBUG_ERR               1   // 1 to enable, 0 to disable
+  #define DEBUG_ERR               1   // 1,2 to enable, 0 to disable
 
   // Debug initialization message
   // - By default, GUIslice outputs a message in DEBUG_ERR mode
