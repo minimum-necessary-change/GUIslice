@@ -44,6 +44,9 @@
 
 #include <stdio.h>
 
+// ------------------------------------------------------------------------
+// Load display drivers
+// ------------------------------------------------------------------------
 #if defined(DRV_DISP_ADAGFX)
 
   // Almost all GFX-compatible libraries depend on Adafruit-GFX
@@ -56,21 +59,12 @@
   // Now configure specific display driver for Adafruit-GFX
   #if defined(DRV_DISP_ADAGFX_ILI9341)
     #include <Adafruit_ILI9341.h>
-    #if (GSLC_SD_EN)
-      #include <SD.h>   // Include support for SD card access
-    #endif
     #include <SPI.h>
   #elif defined(DRV_DISP_ADAGFX_ILI9341_8BIT)
     #include <Adafruit_TFTLCD.h>
-    #if (GSLC_SD_EN)
-      #include <SD.h>   // Include support for SD card access
-    #endif
     #include <SPI.h>
   #elif defined(DRV_DISP_ADAGFX_ILI9341_T3)
     #include <ILI9341_t3.h>
-    #if (GSLC_SD_EN)
-      #include <SD.h>   // Include support for SD card access
-    #endif
     #include <SPI.h>
   #elif defined(DRV_DISP_ADAGFX_SSD1306)
     #include <Adafruit_SSD1306.h>
@@ -82,16 +76,10 @@
     #include <SPI.h>
   #elif defined(DRV_DISP_ADAGFX_HX8347)
     #include <HX8347D_kbv.h>
-    #if (GSLC_SD_EN)
-      #include <SD.h>   // Include support for SD card access
-    #endif
     #include <SPI.h>
   #elif defined(DRV_DISP_ADAGFX_HX8357)
     #include <Adafruit_HX8357.h>
     // TODO: Select either SPI or I2C. For now, assume SPI
-    #if (GSLC_SD_EN)
-      #include <SD.h>   // Include support for SD card access
-    #endif
     #include <SPI.h>
   #elif defined(DRV_DISP_ADAGFX_PCD8544)
     #include <Adafruit_PCD8544.h>
@@ -100,9 +88,6 @@
     #include <Adafruit_RA8875.h>
   #elif defined(DRV_DISP_ADAGFX_MCUFRIEND)
     #include <MCUFRIEND_kbv.h>
-    #if (GSLC_SD_EN)
-      #include <SD.h>   // Include support for SD card access
-    #endif
 
   #else
     #error "CONFIG: Need to enable a supported DRV_DISP_ADAGFX_* option in GUIslice_config_ard.h"
@@ -122,9 +107,6 @@
   // Now configure specific display driver for Adafruit-GFX-AS
   #if defined(DRV_DISP_ADAGFX_ILI9341_STM)
     #include <Adafruit_ILI9341_STM.h>
-    #if (GSLC_SD_EN)
-      #include <SD.h>   // Include support for SD card access
-    #endif
     #include <SPI.h>
   #else
     #error "CONFIG: Need to enable a supported DRV_DISP_ADAGFX_* option in GUIslice_config_ard.h"
@@ -132,7 +114,31 @@
 
 #endif
 
+// ------------------------------------------------------------------------
+// Load storage drivers
+// - Support SD card interface
+// ------------------------------------------------------------------------
+#if (GSLC_SD_EN)
+  #if (GSLC_SD_EN == 1)
+    // Use Arduino built-in SD library
+    // - Only supports HW SPI
+    #include <SD.h>
+  #elif (GSLC_SD_EN == 2)
+    // Use greiman/SdFat library
+    // - Supports SW SPI
+    // - Recommend usage of SdFat library version 1.0.1
+    // - To support SW SPI interface, need to make mod to SdFat lib:
+    // -   Arduino\libraries\SdFat\src\SdFatConfig.h:
+    // -     #define ENABLE_SOFTWARE_SPI_CLASS 1 // Change default from 0 to 1
+    #include <SdFat.h>
+    SdFatSoftSpi<12, 11, 13> SD; // FIXME: Add configurability
+  #endif
+#endif
+ 
 
+// ------------------------------------------------------------------------
+// Load touch drivers
+// ------------------------------------------------------------------------
 #if defined(DRV_TOUCH_ADA_STMPE610)
   #include <SPI.h>
   #include <Wire.h>
@@ -152,6 +158,8 @@
 #elif defined(DRV_TOUCH_HANDLER)
   #include <GUIslice_th.h>
 #endif
+
+// ------------------------------------------------------------------------
 
 
 #ifdef __cplusplus
@@ -1055,7 +1063,7 @@ void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,cons
     w = *(pImage++);
   }
   #if defined(DBG_DRIVER)
-  GSLC_DEBUG2_PRINT("DBG: DrvDrawBmp24FromMem() w=%d h=%d\n", w, h);
+  GSLC_DEBUG_PRINT("DBG: DrvDrawBmp24FromMem() w=%d h=%d\n", w, h);
   #endif
   int row, col;
   for (row=0; row<h; row++) { // For each scanline...
@@ -1083,14 +1091,14 @@ void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,cons
 // These read 16- and 32-bit types from the SD card file.
 // BMP data is stored little-endian, Arduino is little-endian too.
 // May need to reverse subscript order if porting elsewhere.
-uint16_t gslc_DrvRead16SD(File f) {
+uint16_t gslc_DrvRead16SD(File &f) {
   uint16_t result;
   ((uint8_t *)&result)[0] = f.read(); // LSB
   ((uint8_t *)&result)[1] = f.read(); // MSB
   return result;
 }
 
-uint32_t gslc_DrvRead32SD(File f) {
+uint32_t gslc_DrvRead32SD(File &f) {
   uint32_t result;
   ((uint8_t *)&result)[0] = f.read(); // LSB
   ((uint8_t *)&result)[1] = f.read();
@@ -1232,9 +1240,9 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
 {
   #if defined(DBG_DRIVER)
   char addr[6];
-  GSLC_DEBUG2_PRINT("DBG: DrvDrawImage() with ImgBuf address=","");
+  GSLC_DEBUG_PRINT("DBG: DrvDrawImage() with ImgBuf address=","");
   sprintf(addr,"%04X",(unsigned int)sImgRef.pImgBuf);
-  GSLC_DEBUG2_PRINT("%s\n",addr);
+  GSLC_DEBUG_PRINT("%s\n",addr);
   #endif
 
   // GUIslice adapter library for Adafruit-GFX does not pre-load
@@ -1665,7 +1673,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
       m_bLastTouched = false;
       bValid = true;
       #ifdef DBG_TOUCH
-      GSLC_DEBUG2_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
+      GSLC_DEBUG_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
           m_nLastRawPress,m_nLastRawX,m_nLastRawY);
       #endif
 
@@ -1704,7 +1712,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
         bValid = true;
         #ifdef DBG_TOUCH
         // Give indication that workaround applied: continue press
-        GSLC_DEBUG2_PRINT("DBG: Touch Cont =%u Raw[%d,%d]\n",
+        GSLC_DEBUG_PRINT("DBG: Touch Cont =%u Raw[%d,%d]\n",
             m_nLastRawPress,m_nLastRawX,m_nLastRawY);
         #endif
       } else {
@@ -1717,7 +1725,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
         m_bLastTouched = false;
         bValid = true;
         #ifdef DBG_TOUCH
-        GSLC_DEBUG2_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
+        GSLC_DEBUG_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
             m_nLastRawPress,m_nLastRawX,m_nLastRawY);
         #endif
       } // nPressCur
@@ -1961,8 +1969,8 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
         //   to GSLC_ROTATE
         //
         #if defined(DBG_TOUCH)
-          GSLC_DEBUG2_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
-          GSLC_DEBUG2_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+          GSLC_DEBUG_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+          GSLC_DEBUG_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
         #endif
         nOutputX = map(nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
         nOutputY = map(nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
@@ -1981,8 +1989,8 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
     #endif  // DRV_TOUCH_TYPE_RES
   
     #ifdef DBG_TOUCH
-    GSLC_DEBUG2_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
-    GSLC_DEBUG2_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
+    GSLC_DEBUG_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
+    GSLC_DEBUG_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
       pGui->bTouchRemapEn,pGui->nSwapXY,pGui->nFlipX,pGui->nFlipY);
     #endif // DBG_TOUCH
 
@@ -2021,7 +2029,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
 
     // Print output for debug
     #ifdef DBG_TOUCH
-    GSLC_DEBUG2_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
+    GSLC_DEBUG_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
         m_nLastRawPress,m_nLastRawX,m_nLastRawY,nOutputX,nOutputY);
     #endif
 
@@ -2117,15 +2125,15 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
 
   #elif defined(DRV_DISP_ADAGFX_HX8357)
     m_disp.setRotation(0);
-    pGui->nDisp0W = HX8357_TFTHEIGHT;
-    pGui->nDisp0H = HX8357_TFTWIDTH;
+    pGui->nDisp0W = HX8357_TFTWIDTH;
+    pGui->nDisp0H = HX8357_TFTHEIGHT;
     m_disp.setRotation(pGui->nRotation);
     if (!bSwap) {
-      pGui->nDispW = HX8357_TFTHEIGHT;
-      pGui->nDispH = HX8357_TFTWIDTH;
-    } else {
       pGui->nDispW = HX8357_TFTWIDTH;
       pGui->nDispH = HX8357_TFTHEIGHT;
+    } else {
+      pGui->nDispW = HX8357_TFTHEIGHT;
+      pGui->nDispH = HX8357_TFTWIDTH;
     }
 
   #elif defined(DRV_DISP_ADAGFX_PCD8544)

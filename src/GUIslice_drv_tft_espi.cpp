@@ -723,14 +723,14 @@ void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,cons
 // These read 16- and 32-bit types from the SD card file.
 // BMP data is stored little-endian, Arduino is little-endian too.
 // May need to reverse subscript order if porting elsewhere.
-uint16_t gslc_DrvRead16SD(File f) {
+uint16_t gslc_DrvRead16SD(File &f) {
   uint16_t result;
   ((uint8_t *)&result)[0] = f.read(); // LSB
   ((uint8_t *)&result)[1] = f.read(); // MSB
   return result;
 }
 
-uint32_t gslc_DrvRead32SD(File f) {
+uint32_t gslc_DrvRead32SD(File &f) {
   uint32_t result;
   ((uint8_t *)&result)[0] = f.read(); // LSB
   ((uint8_t *)&result)[1] = f.read();
@@ -872,9 +872,9 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
 {
   #if defined(DBG_DRIVER)
   char addr[6];
-  GSLC_DEBUG2_PRINT("DBG: DrvDrawImage() with ImgBuf address=","");
+  GSLC_DEBUG_PRINT("DBG: DrvDrawImage() with ImgBuf address=","");
   sprintf(addr,"%04X",sImgRef.pImgBuf);
-  GSLC_DEBUG2_PRINT("%s\n",addr);
+  GSLC_DEBUG_PRINT("%s\n",addr);
   #endif
 
   // GUIslice adapter library for Adafruit-GFX does not pre-load
@@ -985,6 +985,59 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui)
 
 #if defined(DRV_TOUCH_IN_DISP)
 
+// Enable touch filtering from TFT_eSPI (comment to disable)
+#define DRV_TOUCH_TFT_ESPI_FILTER
+
+
+// Import touch filtering code from TFT_eSPI
+#if defined(DRV_TOUCH_TFT_ESPI_FILTER)
+  // - NOTE: We can't use TFT_eSPI's validTouch() as it is declared private
+  //   so instead we have replicated code here.
+  // ----- REFERENCE CODE begin
+  //   Reference code: https://github.com/Bodmer/TFT_eSPI/blob/master/Extensions/Touch.cpp
+  #define TFT_eSPI_RAWERR 20 // Deadband error allowed in successive position samples
+  uint8_t TFT_eSPI_validTouch(uint16_t *x, uint16_t *y, uint16_t threshold) {
+  uint16_t x_tmp, y_tmp, x_tmp2, y_tmp2;
+
+  // Wait until pressure stops increasing to debounce pressure
+  uint16_t z1 = 1;
+  uint16_t z2 = 0;
+  while (z1 > z2)
+  {
+    z2 = z1;
+    z1 = m_disp.getTouchRawZ();
+    delay(1);
+  }
+
+  //  Serial.print("Z = ");Serial.println(z1);
+
+  if (z1 <= threshold) return false;
+
+  m_disp.getTouchRaw(&x_tmp, &y_tmp);
+
+  //  Serial.print("Sample 1 x,y = "); Serial.print(x_tmp);Serial.print(",");Serial.print(y_tmp);
+  //  Serial.print(", Z = ");Serial.println(z1);
+
+  delay(1); // Small delay to the next sample
+  if (m_disp.getTouchRawZ() <= threshold) return false;
+
+  delay(2); // Small delay to the next sample
+  m_disp.getTouchRaw(&x_tmp2, &y_tmp2);
+
+  //  Serial.print("Sample 2 x,y = "); Serial.print(x_tmp2);Serial.print(",");Serial.println(y_tmp2);
+  //  Serial.print("Sample difference = ");Serial.print(abs(x_tmp - x_tmp2));Serial.print(",");Serial.println(abs(y_tmp - y_tmp2));
+
+  if (abs(x_tmp - x_tmp2) > TFT_eSPI_RAWERR) return false;
+  if (abs(y_tmp - y_tmp2) > TFT_eSPI_RAWERR) return false;
+
+  *x = x_tmp;
+  *y = y_tmp;
+
+  return true;
+  }
+  // ----- REFERENCE CODE end
+#endif // DRV_TOUCH_TFT_ESPI_FILTER
+
 bool gslc_DrvInitTouch(gslc_tsGui* pGui, const char* acDev) {
   if (pGui == NULL) {
     GSLC_DEBUG2_PRINT("ERROR: DrvInitTouch(%s) called with NULL ptr\n", "");
@@ -1068,9 +1121,28 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pn
   uint16_t  nRawPress;   //XPT2046 returns values up to 4095
 
   // Retrieve the raw touch coordinates from the XPT2046
-  // NOTE: We can't use TFT_eSPI's validTouch() as it is declared private
-  nRawPress = m_disp.getTouchRawZ();
-  m_disp.getTouchRaw(&nRawX, &nRawY);
+
+  // Provide optional touch filtering
+  #if defined(DRV_TOUCH_TFT_ESPI_FILTER)
+    // Use touch filtering code from TFT_eSPI
+    uint8_t nSamples = 5;
+    uint8_t nSamplesValid = 0;
+    while (nSamples--) {
+      if (TFT_eSPI_validTouch(&nRawX, &nRawY, 20)) nSamplesValid++;
+    }
+    if (nSamplesValid < 1) {
+      nRawPress = 0; // Invalidate the reading
+    }
+    else {
+      // Force a value within range
+      nRawPress = ADATOUCH_PRESS_MIN + 1;
+    }
+  #else
+    // No additional touch filtering
+    // NOTE: On some displays this will lead to very noisy touch readings
+    nRawPress = m_disp.getTouchRawZ();
+    m_disp.getTouchRaw(&nRawX, &nRawY);
+  #endif // DRV_TOUCH_TFT_ESPI_FILTER
 
   if ((nRawPress > ADATOUCH_PRESS_MIN) && (nRawPress < ADATOUCH_PRESS_MAX)) {
 
@@ -1127,8 +1199,8 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pn
         //   to GSLC_ROTATE
         //
         #if defined(DBG_TOUCH)
-          GSLC_DEBUG2_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
-          GSLC_DEBUG2_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+          GSLC_DEBUG_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+          GSLC_DEBUG_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
         #endif
         nOutputX = map(nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
         nOutputY = map(nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
@@ -1147,8 +1219,8 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pn
     #endif  // DRV_TOUCH_TYPE_RES
   
     #ifdef DBG_TOUCH
-    GSLC_DEBUG2_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
-    GSLC_DEBUG2_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
+    GSLC_DEBUG_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
+    GSLC_DEBUG_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
       pGui->bTouchRemapEn,pGui->nSwapXY,pGui->nFlipX,pGui->nFlipY);
     #endif // DBG_TOUCH
 
@@ -1188,7 +1260,7 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pn
     // Print output for debug
     #ifdef DBG_TOUCH
     if (m_nLastRawPress > 0) {
-    GSLC_DEBUG2_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
+    GSLC_DEBUG_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
         m_nLastRawPress,m_nLastRawX,m_nLastRawY,nOutputX,nOutputY);
     }
     #endif
@@ -1566,7 +1638,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
       m_bLastTouched = false;
       bValid = true;
       #ifdef DBG_TOUCH
-      GSLC_DEBUG2_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
+      GSLC_DEBUG_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
           m_nLastRawPress,m_nLastRawX,m_nLastRawY);
       #endif
 
@@ -1605,7 +1677,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
         bValid = true;
         #ifdef DBG_TOUCH
         // Give indication that workaround applied: continue press
-        GSLC_DEBUG2_PRINT("DBG: Touch Cont =%u Raw[%d,%d]\n",
+        GSLC_DEBUG_PRINT("DBG: Touch Cont =%u Raw[%d,%d]\n",
             m_nLastRawPress,m_nLastRawX,m_nLastRawY);
         #endif
       } else {
@@ -1618,7 +1690,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
         m_bLastTouched = false;
         bValid = true;
         #ifdef DBG_TOUCH
-        GSLC_DEBUG2_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
+        GSLC_DEBUG_PRINT("DBG: Touch End  =%u Raw[%d,%d] *****\n",
             m_nLastRawPress,m_nLastRawX,m_nLastRawY);
         #endif
       } // nPressCur
@@ -1794,8 +1866,8 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
         //   to GSLC_ROTATE
         //
         #if defined(DBG_TOUCH)
-          GSLC_DEBUG2_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
-          GSLC_DEBUG2_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+          GSLC_DEBUG_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+          GSLC_DEBUG_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
         #endif
         nOutputX = map(nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
         nOutputY = map(nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
@@ -1814,8 +1886,8 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
     #endif  // DRV_TOUCH_TYPE_RES
   
     #ifdef DBG_TOUCH
-    GSLC_DEBUG2_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
-    GSLC_DEBUG2_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
+    GSLC_DEBUG_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
+    GSLC_DEBUG_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
       pGui->bTouchRemapEn,pGui->nSwapXY,pGui->nFlipX,pGui->nFlipY);
     #endif // DBG_TOUCH
 
@@ -1854,7 +1926,7 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
 
     // Print output for debug
     #ifdef DBG_TOUCH
-    GSLC_DEBUG2_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
+    GSLC_DEBUG_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
         m_nLastRawPress,m_nLastRawX,m_nLastRawY,nOutputX,nOutputY);
     #endif
 

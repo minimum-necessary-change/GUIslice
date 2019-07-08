@@ -1,5 +1,5 @@
 // =======================================================================
-// GUIslice library (driver layer for m5stack/M5Stack)
+// GUIslice library (driver layer for UTFT)
 // - Calvin Hass
 // - https://www.impulseadventure.com/elec/guislice-gui.html
 // - https://github.com/ImpulseAdventure/GUIslice
@@ -28,39 +28,68 @@
 // THE SOFTWARE.
 //
 // =======================================================================
-/// \file GUIslice_drv_m5stack.cpp
+/// \file GUIslice_drv_utft.cpp
+
 
 // Compiler guard for requested driver
 #include "GUIslice_config.h" // Sets DRV_DISP_*
-#if defined(DRV_DISP_M5STACK)
+#if defined(DRV_DISP_UTFT)
 
 // =======================================================================
-// Driver Layer for m5stack/M5Stack
-// - https://github.com/m5stack/M5Stack
+// Driver Layer for UTFT
 // =======================================================================
 
 // GUIslice library
-#include "GUIslice_drv_m5stack.h"
+#include "GUIslice_drv_utft.h"
 
 #include <stdio.h>
 
-#include <M5Stack.h>
+#if defined(DRV_DISP_UTFT)
+  #include <UTFT.h>
+#else
+  #error "CONFIG: Need to enable a supported DRV_DISP_* option in GUIslice config"
+#endif
 
-#include <SPI.h>
+
+#if defined(DRV_TOUCH_URTOUCH)
+  #include <URTouch.h>
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
 
 
-  // Define driver naming
-  const char* m_acDrvDisp = "M5STACK";
-  const char* m_acDrvTouch = "M5STACK(NONE)";
+
+// ------------------------------------------------------------------------
+#if defined(DRV_DISP_UTFT)
+  const char* m_acDrvDisp = "UTFT";
+  UTFT m_disp(DRV_DISP_UTFT_INIT);
+
+// ------------------------------------------------------------------------
+#endif // DRV_DISP_*
+
 
 
 // ------------------------------------------------------------------------
-// Use default pin settings as defined in M5Stack/src/utility/Config.h
-#define m_disp m5.Lcd
+#if defined(DRV_TOUCH_URTOUCH)
+  const char* m_acDrvTouch = "URTOUCH";
+  URTouch m_touch(DRV_TOUCH_URTOUCH_INIT);
+// ------------------------------------------------------------------------
+#elif defined(DRV_TOUCH_INPUT)
+  const char* m_acDrvTouch = "INPUT";
+// ------------------------------------------------------------------------
+#elif defined(DRV_TOUCH_NONE)
+  const char* m_acDrvTouch = "NONE";
+// ------------------------------------------------------------------------
+#endif // DRV_TOUCH_*
+
+// -----------------------------------------------------------------------
+// Font Definitions
+// -----------------------------------------------------------------------
+  extern uint8_t SmallFont[];
+  extern uint8_t BigFont[];
 
 // =======================================================================
 // Public APIs to GUIslice core library
@@ -88,18 +117,27 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
     // image in the controller graphics RAM
     pGui->bRedrawPartialEn = true;
 
-    // Initialize the M5stack driver
-    // - Note that this will automatically initialize the SD driver
-    // - It also configures the serial interface for 115200 baud
-    m5.begin();
-  
+    // Support any additional initialization prior to display init
+
+    // Perform any display initialization
+    #if defined(DRV_DISP_UTFT)
+      m_disp.InitLCD();
+      m_disp.clrScr();
+
+    #endif
+
     // Now that we have initialized the display, we can assign
     // the rotation parameters and clipping region
     gslc_DrvRotate(pGui,GSLC_ROTATE);
 
-    // Additional init specific to M5stack
-    pinMode(TFT_LIGHT_PIN, OUTPUT);
-    digitalWrite(TFT_LIGHT_PIN, HIGH);
+
+    // Initialize SD card usage
+    #if (GSLC_SD_EN)
+    if (!SD.begin(ADAGFX_PIN_SDCS)) {
+      GSLC_DEBUG_PRINT("ERROR: DrvInit() SD init failed\n",0);
+      return false;
+    }
+    #endif
 
   }
   return true;
@@ -221,14 +259,20 @@ bool gslc_DrvSetClipRect(gslc_tsGui* pGui,gslc_tsRect* pRect)
 // Font handling Functions
 // -----------------------------------------------------------------------
 
-const void* gslc_DrvFontAdd(gslc_teFontRefType eFontRefType,const void* pvFontRef,uint16_t nFontSz)
+const void* gslc_DrvFontAdd(gslc_teFontRefType eFontRefType, const void* pvFontRef, uint16_t nFontSz)
 {
   // Arduino mode currently only supports font definitions from memory
   if (eFontRefType != GSLC_FONTREF_PTR) {
-    GSLC_DEBUG2_PRINT("ERROR: DrvFontAdd(%s) failed - Arduino only supports memory-based fonts\n","");
+    GSLC_DEBUG2_PRINT("ERROR: DrvFontAdd(%s) failed - Arduino only supports memory-based fonts\n", "");
     return NULL;
   }
-  // Return pointer to Adafruit-GFX GFXfont structure
+  // For UTFT, we will force "SmallFont" to be the "default" font
+  // - The Adafruit-GFX convention for default/built-in font is to pass NULL font pointer
+  //   along with a size specifier
+  if (pvFontRef == NULL) {
+    //GSLC_DEBUG2_PRINT("DBG: DrvFontAdd() forcing SmallFont\n", "");
+    pvFontRef = SmallFont;
+  }
   return pvFontRef;
 }
 
@@ -237,114 +281,108 @@ void gslc_DrvFontsDestruct(gslc_tsGui* pGui)
   // Nothing to deallocate
 }
 
-
-// NOTE: Please see the comments associated with gslc_DrvDrawTxt().
-//       In summary, DrvGetTxtSize() is not able to gather the complete
-//       text sizing information from TFT_eSPI as the APIs are not available.
-//
 bool gslc_DrvGetTxtSize(gslc_tsGui* pGui,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,
         int16_t* pnTxtX,int16_t* pnTxtY,uint16_t* pnTxtSzW,uint16_t* pnTxtSzH)
 {
-  uint16_t  nTxtLen    = 0;
-  uint16_t  nTxtHeight = 0;
-  uint16_t  nTxtScale  = pFont->nSize;
-  // TFT_eSPI font API differs from Adafruit-GFX's setFont() API
-  if (pFont->pvFont == NULL) {
-    m_disp.setTextFont(1);
-  } else {
-    m_disp.setFreeFont((const GFXfont *)pFont->pvFont);
-  }
-  m_disp.setTextSize(nTxtScale);
-  nTxtLen = m_disp.textWidth((char*)pStr);
-  nTxtHeight = m_disp.fontHeight(1); // Use freefont "textfont" value
-  *pnTxtX = 0;  // Unused
-  *pnTxtY = 0;  // Unused
-  *pnTxtSzW = nTxtLen;
-  *pnTxtSzH = nTxtHeight;
+  //uint16_t  nTxtScale = 0;
+  m_disp.setFont((uint8_t*)pFont->pvFont);
+  uint16_t nTxtLen = 0;
 
+  // Get length
+  if ((eTxtFlags & GSLC_TXT_MEM) == GSLC_TXT_MEM_RAM) {
+    // Fetch the text bounds
+    nTxtLen = strlen((char*)pStr);
+  } else if ((eTxtFlags & GSLC_TXT_MEM) == GSLC_TXT_MEM_PROG) {
+#if (GSLC_USE_PROGMEM)
+    nTxtLen = strlen_P(pStr);
+#else
+    // NOTE: Should not get here
+    // - The text string has been marked as being stored in
+    //   FLASH via PROGMEM (typically for Arduino) but
+    //   the current device does not support the PROGMEM
+    //   methodology.
+    // - Degrade back to using SRAM directly
+
+    // Fetch the text bounds
+    nTxtLen = strlen((char*)pStr);
+#endif
+  }
+
+  // Estimate the length of the monospaced font
+  *pnTxtSzW = nTxtLen * m_disp.getFontXsize();
+  *pnTxtSzH = 1 * m_disp.getFontYsize(); // TODO: Handle multi-line
+
+  // No baseline info available
+  *pnTxtX = 0;
+  *pnTxtY = 0;
+
+  // TODO m_disp.setFont();
   return true;
+
 }
 
-bool gslc_DrvDrawTxtAlign(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,int16_t nY1,int8_t eTxtAlign,
-        gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt, gslc_tsColor colBg=GSLC_COL_BLACK)
-{
-  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(colTxt);
-  uint16_t nTxtScale = pFont->nSize;
-  // TODO: Support SMOOTH_FONT?
-  m_disp.setTextColor(nColRaw);
-  // TFT_eSPI font API differs from Adafruit-GFX's setFont() API
-  if (pFont->pvFont == NULL) {
-    m_disp.setTextFont(1);
-  } else {
-    m_disp.setFreeFont((const GFXfont *)pFont->pvFont);
-  }
-  m_disp.setTextSize(nTxtScale);
-
-  // Default to mid-mid datum
-  int8_t  nDatum = MC_DATUM;
-  int16_t nTxtX = nX0 + (nX1-nX0)/2;
-  int16_t nTxtY = nY0 + (nY1-nY0)/2;
-
-  // Override the datum depending on alignment mode
-  switch(eTxtAlign) {
-    case GSLC_ALIGN_TOP_LEFT:   nDatum = TL_DATUM; nTxtX = nX0; nTxtY = nY0; break;
-    case GSLC_ALIGN_TOP_MID:    nDatum = TC_DATUM; nTxtY = nY0; break;
-    case GSLC_ALIGN_TOP_RIGHT:  nDatum = TR_DATUM; nTxtX = nX1; nTxtY = nY0; break;
-    case GSLC_ALIGN_MID_LEFT:   nDatum = ML_DATUM; nTxtX = nX0; break;
-    case GSLC_ALIGN_MID_MID:    nDatum = MC_DATUM; break;
-    case GSLC_ALIGN_MID_RIGHT:  nDatum = MR_DATUM; nTxtX = nX1; break;
-    case GSLC_ALIGN_BOT_LEFT:   nDatum = BL_DATUM; nTxtX = nX0; nTxtY = nY1; break;
-    case GSLC_ALIGN_BOT_MID:    nDatum = BC_DATUM; nTxtY = nY1; break;
-    case GSLC_ALIGN_BOT_RIGHT:  nDatum = BR_DATUM; nTxtX = nX1; nTxtY = nY1; break;
-    default:                    nDatum = MC_DATUM; break;
-  }
-  m_disp.setTextDatum(nDatum);
-
-  m_disp.drawString(pStr,nTxtX,nTxtY);
-
-  // For now, always return true
-  return true;
-}
-
-// NOTE: As TFT_eSPI performs some complex logic in determining the font
-//       baseline and associated adjustments and these are not provided
-//       via an API, calling DrvGetTxtSize() is insufficient to determine
-//       the appropriate position corrections required (eg. when centering
-//       text). Therefore, DrvDrawTxt() will not result in proper text
-//       alignment in all cases. Instead, it is recommended that
-//       DrvDrawTxtAlign() is used instead, which will depend on the datum
-//       adjustment code within TFT_eSPI. This mode of operation is
-//       selected by default in GUIslice_drv_tft_espi.h by setting
-//       DRV_OVERRIDE_TXT_ALIGN to 1.
-
-// This method is not recommended for use with TFT_eSPI. DrvDrawTxtAlign()
-// should be used instead.
 bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* pFont,const char* pStr,gslc_teTxtFlags eTxtFlags,gslc_tsColor colTxt, gslc_tsColor colBg=GSLC_COL_BLACK)
 {
-  uint16_t nTxtScale = pFont->nSize;
-  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(colTxt);
-  // TODO: Support SMOOTH_FONT?
-  m_disp.setTextColor(nColRaw);
-  // m_disp.setCursor(nTxtX,nTxtY);
-  m_disp.setTextSize(nTxtScale);
+  //uint16_t  nTxtScale = pFont->nSize;
+  uint16_t  nColRaw = gslc_DrvAdaptColorToRaw(colTxt);
+  char      ch;
+  int16_t   nTxtXStart;
 
-  // Default to top-left datum
-  m_disp.setTextDatum(TL_DATUM);
+  // Initialize the font and positioning
+  m_disp.setFont((uint8_t*)pFont->pvFont);
+  m_disp.setColor(nColRaw);
+  // Default to transparent text rendering
+  m_disp.setBackColor(VGA_TRANSPARENT);
 
-  if ((eTxtFlags & GSLC_TXT_MEM) == GSLC_TXT_MEM_RAM) {
-    // String in SRAM; can access buffer directly
-    // m_disp.println(pStr);
-    m_disp.drawString(pStr,nTxtX,nTxtY);
-  } else if ((eTxtFlags & GSLC_TXT_MEM) == GSLC_TXT_MEM_PROG) {
-    // String in PROGMEM (flash); must access via pgm_* calls
-    char    ch;
-    int     nXOffset = 0;
-    while ((ch = pgm_read_byte(pStr++))) {
-      // m_disp.print(ch);
-      nXOffset += m_disp.drawChar(ch,nTxtX+nXOffset,nTxtY);
-    }
-    m_disp.println();
+  // TODO m_disp.setCursor(nTxtX,nTxtY);
+  // TODO m_disp.setTextSize(nTxtScale);
+
+  // Driver-specific overrides
+
+  // Default to accessing RAM directly (GSLC_TXT_MEM_RAM)
+  bool bProg = false;
+  if ((eTxtFlags & GSLC_TXT_MEM) == GSLC_TXT_MEM_PROG) {
+    bProg = true;
   }
+
+  // Save the original starting X coordinate for line wraps
+  nTxtXStart = nTxtX;
+
+  while (1) {
+    // Fetch the next character
+    if (!bProg) {
+      // String in SRAM; can access buffer directly
+      ch = *(pStr++);
+    } else {
+      // String in PROGMEM (flash); must access via pgm_* calls
+      ch = pgm_read_byte(pStr++);
+    }
+
+    // Detect string terminator
+    if (ch == 0) {
+      break;
+    }
+
+    // Render the character
+    // Call UTFT for rendering
+    // Note that UTFT:printChar() is public but not documented
+    m_disp.printChar(ch,nTxtX,nTxtY);
+    // Advance the current position
+    nTxtX += m_disp.getFontXsize();
+
+    // Handle multi-line text:
+    // If we just output a newline, Adafruit-GFX will automatically advance
+    // the Y cursor but reset the X cursor to 0. Therefore we need to
+    // readjust the X cursor to our aligned bounding box.
+    if (ch == '\n') {
+      nTxtX = nTxtXStart;
+      nTxtY += m_disp.getFontYsize();
+    }
+
+  } // while(1)
+
+  // Restore the font
+  // TODO m_disp.setFont();
 
   return true;
 }
@@ -355,7 +393,17 @@ bool gslc_DrvDrawTxt(gslc_tsGui* pGui,int16_t nTxtX,int16_t nTxtY,gslc_tsFont* p
 
 void gslc_DrvPageFlipNow(gslc_tsGui* pGui)
 {
-  // Nothing to do as we're not double-buffered
+  #if defined(DRV_DISP_ADAGFX_SSD1306)
+    // Show the display buffer on the hardware.
+    // NOTE: You _must_ call display after making any drawing commands
+    // to make them visible on the display hardware!
+    m_disp.display();
+    // TODO: Might need to call m_disp.clearDisplay() now?
+
+  #else
+    // Nothing to do as we're not double-buffered
+
+  #endif
 }
 
 
@@ -373,7 +421,8 @@ bool gslc_DrvDrawPoint(gslc_tsGui* pGui,int16_t nX,int16_t nY,gslc_tsColor nCol)
 #endif
 
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.drawPixel(nX,nY,nColRaw);
+  m_disp.setColor(nColRaw);
+  m_disp.drawPixel(nX, nY);
   return true;
 }
 
@@ -392,7 +441,8 @@ bool gslc_DrvDrawFillRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 #endif
 
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.fillRect(rRect.x,rRect.y,rRect.w,rRect.h,nColRaw);
+  m_disp.setColor(nColRaw);
+  m_disp.fillRect(rRect.x, rRect.y, rRect.x + rRect.w - 1, rRect.y + rRect.h - 1);
   return true;
 }
 
@@ -401,7 +451,9 @@ bool gslc_DrvDrawFillRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadiu
   // TODO: Support GSLC_CLIP_EN
   // - Would need to determine how to clip the rounded corners
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.fillRoundRect(rRect.x,rRect.y,rRect.w,rRect.h,nRadius,nColRaw);
+  m_disp.setColor(nColRaw);
+  // TODO: Handle radius?
+  m_disp.fillRoundRect(rRect.x, rRect.y, rRect.x + rRect.w - 1, rRect.y + rRect.h - 1);
   return true;
 }
 
@@ -409,6 +461,7 @@ bool gslc_DrvDrawFillRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadiu
 bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 {
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
+  m_disp.setColor(nColRaw);
 #if (GSLC_CLIP_EN)
   // Perform clipping
   // - TODO: Optimize the following, perhaps with new ClipLineHV()
@@ -419,27 +472,27 @@ bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
   nY0 = rRect.y;
   nX1 = rRect.x + rRect.w - 1;
   nY1 = nY0;
-  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1); }
   // Bottom
   nX0 = rRect.x;
   nY0 = rRect.y + rRect.h - 1;
   nX1 = rRect.x + rRect.w - 1;
   nY1 = nY0;
-  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1); }
   // Left
   nX0 = rRect.x;
   nY0 = rRect.y;
   nX1 = nX0;
   nY1 = rRect.y + rRect.h - 1;
-  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1); }
   // Right
   nX0 = rRect.x + rRect.w - 1;
   nY0 = rRect.y;
   nX1 = nX0;
   nY1 = rRect.y + rRect.h - 1;
-  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1, nColRaw); }
+  if (gslc_ClipLine(&pDriver->rClipRect, &nX0, &nY0, &nX1, &nY1)) { m_disp.drawLine(nX0, nY0, nX1, nY1); }
 #else
-  m_disp.drawRect(rRect.x,rRect.y,rRect.w,rRect.h,nColRaw);
+  m_disp.drawRect(rRect.x,rRect.y,rRect.x+rRect.w-1,rRect.y+rRect.h-1);
 #endif
   return true;
 }
@@ -447,9 +500,12 @@ bool gslc_DrvDrawFrameRect(gslc_tsGui* pGui,gslc_tsRect rRect,gslc_tsColor nCol)
 bool gslc_DrvDrawFrameRoundRect(gslc_tsGui* pGui,gslc_tsRect rRect,int16_t nRadius,gslc_tsColor nCol)
 {
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
+
   // TODO: Support GSLC_CLIP_EN
   // - Would need to determine how to clip the rounded corners
-  m_disp.drawRoundRect(rRect.x,rRect.y,rRect.w,rRect.h,nRadius,nColRaw);
+  m_disp.setColor(nColRaw);
+  // TODO: Handle radius?
+  m_disp.drawRoundRect(rRect.x,rRect.y,rRect.x+rRect.w-1,rRect.y+rRect.h-1);
   return true;
 }
 
@@ -463,7 +519,8 @@ bool gslc_DrvDrawLine(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,int16_t nX1,int16
 #endif
 
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.drawLine(nX0,nY0,nX1,nY1,nColRaw);
+  m_disp.setColor(nColRaw);
+  m_disp.drawLine(nX0, nY0, nX1, nY1);
   return true;
 }
 
@@ -474,7 +531,8 @@ bool gslc_DrvDrawFrameCircle(gslc_tsGui*,int16_t nMidX,int16_t nMidY,uint16_t nR
 #endif
 
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.drawCircle(nMidX,nMidY,nRadius,nColRaw);
+  m_disp.setColor(nColRaw);
+  m_disp.drawCircle(nMidX, nMidY, nRadius);
   return true;
 }
 
@@ -485,32 +543,8 @@ bool gslc_DrvDrawFillCircle(gslc_tsGui*,int16_t nMidX,int16_t nMidY,uint16_t nRa
 #endif
 
   uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.fillCircle(nMidX,nMidY,nRadius,nColRaw);
-  return true;
-}
-
-
-bool gslc_DrvDrawFrameTriangle(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,
-        int16_t nX1,int16_t nY1,int16_t nX2,int16_t nY2,gslc_tsColor nCol)
-{
-#if (GSLC_CLIP_EN)
-  // TODO
-#endif
-
-  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.drawTriangle(nX0,nY0,nX1,nY1,nX2,nY2,nColRaw);
-  return true;
-}
-
-bool gslc_DrvDrawFillTriangle(gslc_tsGui* pGui,int16_t nX0,int16_t nY0,
-        int16_t nX1,int16_t nY1,int16_t nX2,int16_t nY2,gslc_tsColor nCol)
-{
-#if (GSLC_CLIP_EN)
-  // TODO
-#endif
-
-  uint16_t nColRaw = gslc_DrvAdaptColorToRaw(nCol);
-  m_disp.fillTriangle(nX0,nY0,nX1,nY1,nX2,nY2,nColRaw);
+  m_disp.setColor(nColRaw);
+  m_disp.fillCircle(nMidX, nMidY, nRadius);
   return true;
 }
 
@@ -576,18 +610,30 @@ void gslc_DrvDrawMonoFromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,
 
 void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,const unsigned char* pBitmap,bool bProgMem)
 {
+  // AdaFruit GFX doesn't have a routine for this so we output pixel by pixel
   const int16_t* pImage = (const int16_t*)pBitmap;
-  int16_t h = *(pImage++);
-  int16_t w = *(pImage++);
+  int16_t h, w;
+  if (bProgMem) {
+    h = pgm_read_word(pImage++);
+    w = pgm_read_word(pImage++);
+  } else {
+    h = *(pImage++);
+    w = *(pImage++);
+  }
+  #if defined(DBG_DRIVER)
+  GSLC_DEBUG_PRINT("DBG: DrvDrawBmp24FromMem() w=%d h=%d\n", w, h);
+  #endif
   int row, col;
   for (row=0; row<h; row++) { // For each scanline...
     for (col=0; col<w; col++) { // For each pixel...
       if (bProgMem) {
         //To read from Flash Memory, pgm_read_XXX is required.
         //Since image is stored as uint16_t, pgm_read_word is used as it uses 16bit address
-        m_disp.drawPixel(nDstX+col, nDstY+row, pgm_read_word(pImage++));
+        m_disp.setColor(pgm_read_word(pImage++));
+        m_disp.drawPixel(nDstX + col, nDstY + row);
       } else {
-        m_disp.drawPixel(nDstX+col, nDstY+row, *(pImage++));
+        m_disp.setColor(*(pImage++));
+        m_disp.drawPixel(nDstX + col, nDstY + row);
       }
     } // end pixel
   }
@@ -635,6 +681,7 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
   int      w, h, row, col;
   uint8_t  r, g, b;
   uint32_t pos = 0, startTime = millis();
+  (void)startTime; // Unused
 
   if((x >= pGui->nDispW) || (y >= pGui->nDispH)) return;
 
@@ -651,12 +698,14 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
   // Parse BMP header
   if(gslc_DrvRead16SD(bmpFile) == 0x4D42) { // BMP signature
     uint32_t nFileSize = gslc_DrvRead32SD(bmpFile);
+    (void)nFileSize; // Unused
     //Serial.print("File size: "); Serial.println(nFileSize);
     (void)gslc_DrvRead32SD(bmpFile); // Read & ignore creator bytes
     bmpImageoffset = gslc_DrvRead32SD(bmpFile); // Start of image data
     //Serial.print("Image Offset: "); Serial.println(bmpImageoffset, DEC);
     // Read DIB header
     uint32_t nHdrSize = gslc_DrvRead32SD(bmpFile);
+    (void)nHdrSize; // Unused
     //Serial.print("Header size: "); Serial.println(nHdrSize);
     bmpWidth  = gslc_DrvRead32SD(bmpFile);
     bmpHeight = gslc_DrvRead32SD(bmpFile);
@@ -752,7 +801,7 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
   #if defined(DBG_DRIVER)
   char addr[6];
   GSLC_DEBUG_PRINT("DBG: DrvDrawImage() with ImgBuf address=","");
-  sprintf(addr,"%04X",sImgRef.pImgBuf);
+  sprintf(addr,"%04X",(unsigned int)sImgRef.pImgBuf);
   GSLC_DEBUG_PRINT("%s\n",addr);
   #endif
 
@@ -778,7 +827,7 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
     } else {
       return false; // TODO: not yet supported
     }
-
+#if (GSLC_USE_PROGMEM)
   } else if ((sImgRef.eImgFlags & GSLC_IMGREF_SRC) == GSLC_IMGREF_SRC_PROG) {
     // TODO: Probably need to fix this to work with PROGMEM,
     //       but check (GSLC_USE_PROGMEM) first
@@ -789,13 +838,12 @@ bool gslc_DrvDrawImage(gslc_tsGui* pGui,int16_t nDstX,int16_t nDstY,gslc_tsImgRe
       return true;
     } else if ((sImgRef.eImgFlags & GSLC_IMGREF_FMT) == GSLC_IMGREF_FMT_BMP24) {
       // 24-bit Bitmap in flash
-      // FIXME: Should we be passing "true" as last param?
-      gslc_DrvDrawBmp24FromMem(pGui,nDstX,nDstY,sImgRef.pImgBuf,false);
+      gslc_DrvDrawBmp24FromMem(pGui,nDstX,nDstY,sImgRef.pImgBuf,true);
       return true;
     } else {
       return false; // TODO: not yet supported
     }
-
+#endif
   } else if ((sImgRef.eImgFlags & GSLC_IMGREF_SRC) == GSLC_IMGREF_SRC_SD) {
     // Load image from SD media
     #if (GSLC_SD_EN)
@@ -856,28 +904,146 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui)
 // -----------------------------------------------------------------------
 
 
-#if defined(DRV_TOUCH_IN_DISP)
-
 bool gslc_DrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
   if (pGui == NULL) {
     GSLC_DEBUG2_PRINT("ERROR: DrvInitTouch(%s) called with NULL ptr\n","");
     return false;
   }
-
-  // For M5stack, no extra initialization is required to support the buttons
-
-  // Nothing further to do with driver
+  // TODO
+  // Perform any driver-specific touchscreen init here
   return true;
 }
 
 
 bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal)
 {
+  // TODO
+  return false;
+}
 
-  if ((pGui == NULL) || (pGui->pvDriver == NULL)) {
-    GSLC_DEBUG2_PRINT("ERROR: DrvGetTouch(%s) called with NULL ptr\n","");
+// ------------------------------------------------------------------------
+// Touch Functions (via external touch driver)
+// ------------------------------------------------------------------------
+
+
+
+#if defined(DRV_TOUCH_TYPE_EXTERNAL)
+
+bool gslc_TDrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
+
+  // Capture default calibration settings for resistive displays
+  #if defined(DRV_TOUCH_TYPE_RES)
+    pGui->nTouchCalXMin = ADATOUCH_X_MIN;
+    pGui->nTouchCalXMax = ADATOUCH_X_MAX;
+    pGui->nTouchCalYMin = ADATOUCH_Y_MIN;
+    pGui->nTouchCalYMax = ADATOUCH_Y_MAX;
+  #endif // DRV_TOUCH_TYPE_RES
+
+  // Support touch controllers with swapped X & Y
+  #if defined(ADATOUCH_REMAP_YX)
+    // Capture swap setting from config file
+    pGui->bTouchRemapYX = ADATOUCH_REMAP_YX;
+  #else
+    // For backward compatibility with older config files
+    // that have not defined this config option
+    pGui->bTouchRemapYX = false;
+  #endif
+
+  #if defined(DRV_TOUCH_URTOUCH)
+    m_touch.InitTouch();
+    m_touch.setPrecision(PREC_MEDIUM);
+    // Disable touch remapping since URTouch handles it
+    gslc_SetTouchRemapEn(pGui, false);
+    return true;
+  #elif defined(DRV_TOUCH_INPUT)
+    // Nothing more to initialize for GPIO input control mode
+    return true;
+  #elif defined(DRV_TOUCH_HANDLER)
+    return true;
+  #else
+    // ERROR: Unsupported driver mode
+    GSLC_DEBUG_PRINT("ERROR: TDrvInitTouch() driver not supported yet\n",0);
     return false;
-  }
+  #endif
+
+}
+
+bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal)
+{
+
+  #if defined(DRV_TOUCH_NONE)
+    return false;
+  #endif
+
+  // As the STMPE610 hardware driver doesn't appear to return
+  // an indication of "touch released" with a coordinate, we
+  // must detect the release transition here and send the last
+  // known coordinate but with pressure=0. To do this, we are
+  // allocating a static variable to maintain the last touch
+  // coordinate.
+  // TODO: This code can be reworked / simplified
+  static int16_t  m_nLastRawX     = 0;
+  static int16_t  m_nLastRawY     = 0;
+  static uint16_t m_nLastRawPress = 0;
+  static bool     m_bLastTouched  = false;
+
+  bool bValid = false;  // Indicate a touch event to GUIslice core?
+
+  // Define maximum bounds for display in native orientation
+  int nDispOutMaxX,nDispOutMaxY;
+  nDispOutMaxX = pGui->nDisp0W-1;
+  nDispOutMaxY = pGui->nDisp0H-1;
+
+  // ----------------------------------------------------------------
+  #if defined(DRV_TOUCH_URTOUCH)
+
+    // Note that we rely on URTouch's calibration
+    // - This is detected by URTouch / URTouch_Calibration
+    // - The calibration settings are stored in URTouch/URTouchCD.h
+
+    uint16_t  nRawX,nRawY;
+    uint16_t  nRawPress;
+    bool bTouchOk = true;
+
+    if (!m_touch.dataAvailable()) {
+      bTouchOk = false;
+    }
+
+    if (bTouchOk) {
+      m_touch.read();
+      nRawX = m_touch.getX();
+      nRawY = m_touch.getY();
+      if ((nRawX == -1) || (nRawY == -1)) {
+        bTouchOk = false;
+      }
+    }
+
+    if (bTouchOk) {
+      nRawPress = 255; // Dummy non-zero value
+      m_nLastRawX = nRawX;
+      m_nLastRawY = nRawY;
+      m_nLastRawPress = nRawPress;
+      m_bLastTouched = true;
+      bValid = true;
+    } else {
+      if (!m_bLastTouched) {
+        // Wasn't touched before; do nothing
+      }
+      else {
+        // Touch release
+        // Indicate old coordinate but with pressure=0
+        m_nLastRawPress = 0;
+        m_bLastTouched = false;
+        bValid = true;
+      }
+    }
+
+  // ----------------------------------------------------------------
+  #elif defined(DRV_TOUCH_INPUT)
+    // No more to do for GPIO-only mode since gslc_Update() already
+    // looks for GPIO inputs before calling TDrvGetTouch().
+    // bValid will default to false
+
 
   // Assign defaults
   *pnX = 0;
@@ -887,52 +1053,161 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPre
   *peInputEvent = GSLC_INPUT_NONE;
   *pnInputVal = 0;
 
-  // Trigger the M5 update routine
-  M5.update();
+  #ifdef DRV_DISP_ADAGFX_SEESAW
+    // Keep track of last value to support simple debouncing
+    static uint32_t nButtonsLast = 0xFFFFFFFF;     // Saved last value (static to preserve b/w calls)
+    uint32_t nButtonsCur = m_seesaw.readButtons(); // Current value (note active low)
+    if ((nButtonsLast & TFTSHIELD_BUTTON_UP) && !(nButtonsCur & TFTSHIELD_BUTTON_UP)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_UP;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_DOWN) && !(nButtonsCur & TFTSHIELD_BUTTON_DOWN)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_DOWN;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_LEFT) && !(nButtonsCur & TFTSHIELD_BUTTON_LEFT)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_LEFT;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_RIGHT) && !(nButtonsCur & TFTSHIELD_BUTTON_RIGHT)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_RIGHT;
+    } else if ((nButtonsLast & TFTSHIELD_BUTTON_IN) && !(nButtonsCur & TFTSHIELD_BUTTON_IN)) {
+      *peInputEvent = GSLC_INPUT_PIN_ASSERT;
+      *pnInputVal = GSLC_PIN_BTN_SEL;
+    }
+    // Save button state so that transitions can be detected
+    // during the next pass.
+    nButtonsLast = nButtonsCur;
+  #endif
 
-  // Btn.wasReleasefor() is only available in the latest M5stack versions.
-#if defined(M5STACK_TOUCH_PRESS_LONG)
-  if (M5.BtnA.wasReleasefor(M5STACK_TOUCH_PRESS_LONG)) {
-    *peInputEvent = GSLC_INPUT_PIN_ASSERT;
-    *pnInputVal = GSLC_PIN_BTN_A_LONG;
-  }  else if (M5.BtnB.wasReleasefor(M5STACK_TOUCH_PRESS_LONG)) {
-    *peInputEvent = GSLC_INPUT_PIN_ASSERT;
-    *pnInputVal = GSLC_PIN_BTN_B_LONG;
-  }  else if (M5.BtnC.wasReleasefor(M5STACK_TOUCH_PRESS_LONG)) {
-    *peInputEvent = GSLC_INPUT_PIN_ASSERT;
-    *pnInputVal = GSLC_PIN_BTN_C_LONG;
-  } else if (M5.BtnA.wasReleased()) {
-#else
-  if (M5.BtnA.wasReleased()) {
-#endif
-    *peInputEvent = GSLC_INPUT_PIN_ASSERT;
-    *pnInputVal = GSLC_PIN_BTN_A;
-  }  else if (M5.BtnB.wasReleased()) {
-    *peInputEvent = GSLC_INPUT_PIN_ASSERT;
-    *pnInputVal = GSLC_PIN_BTN_B;
-  }  else if (M5.BtnC.wasReleased()) {
-    *peInputEvent = GSLC_INPUT_PIN_ASSERT;
-    *pnInputVal = GSLC_PIN_BTN_C;
-  } else {
-    return false; // No pin event detected
-  }
 
   // If we reached here, then we had a button event
   return true;
+
+  // ----------------------------------------------------------------
+  #endif // DRV_TOUCH_*
+
+
+  // If an event was detected, signal it back to GUIslice
+  if (bValid) {
+
+    int nRawX,nRawY;
+    int nInputX,nInputY;
+    int nOutputX,nOutputY;
+
+    // Input assignment
+    nRawX = m_nLastRawX;
+    nRawY = m_nLastRawY;
+
+    // Handle any hardware swapping in native orientation
+    // This is done prior to any flip/swap as a result of
+    // rotation away from the native orientation.
+    // In most cases, the following is not used, but there
+    // may be touch modules that have swapped their X&Y convention.
+    if (pGui->bTouchRemapYX) {
+      nRawX = m_nLastRawY;
+      nRawY = m_nLastRawX;
+    }
+
+    nInputX = nRawX;
+    nInputY = nRawY;
+
+    // For resistive displays, perform constraint and scaling
+    #if defined(DRV_TOUCH_TYPE_RES)
+      if (pGui->bTouchRemapEn) {
+        // Perform scaling from input to output
+        // - Calibration done in native orientation (GSLC_ROTATE=0)
+        // - Input to map() is done with raw unswapped X,Y
+        // - map() and constrain() done with native dimensions and
+        //   native calibration
+        // - Swap & Flip done to output of map/constrain according
+        //   to GSLC_ROTATE
+        //
+        #if defined(DBG_TOUCH)
+          GSLC_DEBUG_PRINT("DBG: remapX: (%d,%d,%d,%d,%d)\n", nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+          GSLC_DEBUG_PRINT("DBG: remapY: (%d,%d,%d,%d,%d)\n", nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+        #endif
+        nOutputX = map(nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
+        nOutputY = map(nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
+        // Perform constraining to OUTPUT boundaries
+        nOutputX = constrain(nOutputX, 0, nDispOutMaxX);
+        nOutputY = constrain(nOutputY, 0, nDispOutMaxY);
+      } else {
+        // No scaling from input to output
+        nOutputX = nInputX;
+        nOutputY = nInputY;
+      }
+    #else
+      // No scaling from input to output
+      nOutputX = nInputX;
+      nOutputY = nInputY;
+    #endif  // DRV_TOUCH_TYPE_RES
+  
+    #ifdef DBG_TOUCH
+    GSLC_DEBUG_PRINT("DBG: PreRotate: x=%u y=%u\n", nOutputX, nOutputY);
+    #if defined(DRV_TOUCH_TYPE_RES)
+      GSLC_DEBUG_PRINT("DBG: RotateCfg: remap=%u nSwapXY=%u nFlipX=%u nFlipY=%u\n",
+        pGui->bTouchRemapEn,pGui->nSwapXY,pGui->nFlipX,pGui->nFlipY);
+    #endif // DRV_TOUCH_TYPE_RES
+    #endif // DBG_TOUCH
+
+    // Perform remapping due to current orientation
+    if (pGui->bTouchRemapEn) {
+      // Perform any requested swapping of input axes
+      if (pGui->nSwapXY) {
+        int16_t nOutputXTmp = nOutputX;
+        nOutputX = nOutputY;
+        nOutputY = nOutputXTmp;
+        // Perform any requested output axis flipping
+        // TODO: Collapse these cases
+        if (pGui->nFlipX) {
+          nOutputX = nDispOutMaxY - nOutputX;
+        }
+        if (pGui->nFlipY) {
+          nOutputY = nDispOutMaxX - nOutputY;
+        }
+      } else {
+        // Perform any requested output axis flipping
+        if (pGui->nFlipX) {
+          nOutputX = nDispOutMaxX - nOutputX;
+        }
+        if (pGui->nFlipY) {
+          nOutputY = nDispOutMaxY - nOutputY;
+        }
+      }
+    }
+
+    // Final assignment
+    *pnX          = nOutputX;
+    *pnY          = nOutputY;
+    *pnPress      = m_nLastRawPress;
+    *peInputEvent = GSLC_INPUT_TOUCH;
+    *pnInputVal   = 0;
+
+    // Print output for debug
+    #ifdef DBG_TOUCH
+    GSLC_DEBUG_PRINT("DBG: Touch Press=%u Raw[%d,%d] Out[%d,%d]\n",
+        m_nLastRawPress,m_nLastRawX,m_nLastRawY,nOutputX,nOutputY);
+    #endif
+
+    // Return with indication of new value
+    return true;
+  }
+
+  // No new value
+  return false;
 }
 
-#endif // DRV_TOUCH_IN_DISP
+#endif // DRV_TOUCH_*
 
 
 // -----------------------------------------------------------------------
 // Dynamic Screen rotation and Touch axes swap/flip functions
 // -----------------------------------------------------------------------
 
-
 /// Change display rotation and any associated touch orientation
 bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
 {
   bool bChange = true;
+  bool bSupportRotation = true;
 
   // Determine if the new orientation has swapped axes
   // versus the native orientation (0)
@@ -940,6 +1215,7 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
   if ((nRotation == 1) || (nRotation == 3)) {
     bSwap = true;
   }
+  (void)bSwap; // May be Unused in some driver modes
 
   // Did the orientation change?
   if (nRotation == pGui->nRotation) {
@@ -953,20 +1229,32 @@ bool gslc_DrvRotate(gslc_tsGui* pGui, uint8_t nRotation)
 
   // Inform the display to adjust the orientation and
   // update the saved display dimensions
+  #if defined(DRV_DISP_UTFT)
+    pGui->nDisp0W = m_disp.getDisplayXSize();
+    pGui->nDisp0H = m_disp.getDisplayYSize();
+    // Temporarily disable support for rotation
+    // TODO m_disp.setRotation(pGui->nRotation);
+    pGui->nDispW = m_disp.getDisplayXSize();
+    pGui->nDispH = m_disp.getDisplayYSize();
 
-  // DRV_DISP_M5STACK
-  // Capture display dimensions in native orientation
-  m_disp.setRotation(0);
-  pGui->nDisp0W = m_disp.width();
-  pGui->nDisp0H = m_disp.height();
-  // Capture display dimensions in selected orientation
-  m_disp.setRotation(pGui->nRotation);
-  pGui->nDispW = m_disp.width();
-  pGui->nDispH = m_disp.height();
+  #else
+    // Report error for unsupported display mode
+    // - If we don't trap this condition, the GUI dimensions will be incorrect
+    #error "ERROR: DRV_DISP_* mode not supported in DrvRotate initialization"
+
+  #endif
 
   // Update the clipping region
-  gslc_tsRect rClipRect = {0,0,pGui->nDispW,pGui->nDispH};
-  gslc_DrvSetClipRect(pGui,&rClipRect);
+  gslc_tsRect rClipRect = { 0,0,pGui->nDispW,pGui->nDispH };
+  gslc_DrvSetClipRect(pGui, &rClipRect);
+
+  if (!bSupportRotation) {
+    // No support for rotation, so override rotation indicator to 0
+    // This will also ensure that nSwapXY / nFlipX / nFlipY all remain 0
+    pGui->nRotation = 0;
+    // Ensure no redraw forced due to change in rotation value
+    bChange = false;
+  }
 
   // Now update the touch remapping
   #if !defined(DRV_TOUCH_NONE)
@@ -996,7 +1284,7 @@ uint16_t gslc_DrvAdaptColorToRaw(gslc_tsColor nCol)
 {
   uint16_t nColRaw = 0;
 
-  // RGB565
+  // Default to RGB565
   nColRaw |= (((nCol.r & 0xF8) >> 3) << 11); // Mask: 1111 1000 0000 0000
   nColRaw |= (((nCol.g & 0xFC) >> 2) <<  5); // Mask: 0000 0111 1110 0000
   nColRaw |= (((nCol.b & 0xF8) >> 3) <<  0); // Mask: 0000 0000 0001 1111

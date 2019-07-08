@@ -4,7 +4,7 @@
 // - https://www.impulseadventure.com/elec/guislice-gui.html
 // - https://github.com/ImpulseAdventure/GUIslice
 //
-// - Version 0.12.0
+// - Version 0.12.1
 // =======================================================================
 //
 // The MIT License
@@ -320,12 +320,12 @@ void gslc_InitDebug(GSLC_CB_DEBUG_OUT pfunc)
 
 // Internal enumerations for printf() parser state machine
 typedef enum {
-  GSLC_DEBUG2_PRINT_NORM,
-  GSLC_DEBUG2_PRINT_TOKEN,
-  GSLC_DEBUG2_PRINT_UINT16,
-  GSLC_DEBUG2_PRINT_CHAR,
-  GSLC_DEBUG2_PRINT_STR,
-  GSLC_DEBUG2_PRINT_STR_P
+  GSLC_S_DEBUG_PRINT_NORM,
+  GSLC_S_DEBUG_PRINT_TOKEN,
+  GSLC_S_DEBUG_PRINT_UINT16,
+  GSLC_S_DEBUG_PRINT_CHAR,
+  GSLC_S_DEBUG_PRINT_STR,
+  GSLC_S_DEBUG_PRINT_STR_P
 } gslc_teDebugPrintState;
 
 // A lightweight printf() routine that calls user function for
@@ -359,7 +359,7 @@ void gslc_DebugPrintf(const char* pFmt, ...)
     va_list  vlist;
     va_start(vlist,pFmt);
 
-    gslc_teDebugPrintState  nState = GSLC_DEBUG2_PRINT_NORM;
+    gslc_teDebugPrintState  nState = GSLC_S_DEBUG_PRINT_NORM;
 
     // Determine maximum number digit size
     #if defined(__AVR__)
@@ -376,21 +376,21 @@ void gslc_DebugPrintf(const char* pFmt, ...)
 
     while (cFmt != 0) {
 
-      if (nState == GSLC_DEBUG2_PRINT_NORM) {
+      if (nState == GSLC_S_DEBUG_PRINT_NORM) {
 
         if (cFmt == '%') {
-          nState = GSLC_DEBUG2_PRINT_TOKEN;
+          nState = GSLC_S_DEBUG_PRINT_TOKEN;
         } else {
           // Normal char
           (g_pfDebugOut)(cFmt);
         }
         nFmtInd++; // Advance format index
 
-      } else if (nState == GSLC_DEBUG2_PRINT_TOKEN) {
+      } else if (nState == GSLC_S_DEBUG_PRINT_TOKEN) {
 
         // Get token
         if (cFmt == 'd') {
-          nState = GSLC_DEBUG2_PRINT_UINT16;
+          nState = GSLC_S_DEBUG_PRINT_UINT16;
           // Detect negative value and convert to unsigned value
           // with negation flag. This enables us to reuse the same
           // decoding logic.
@@ -406,38 +406,38 @@ void gslc_DebugPrintf(const char* pFmt, ...)
           nNumDivisor = nMaxDivisor;
 
         } else if (cFmt == 'u') {
-          nState = GSLC_DEBUG2_PRINT_UINT16;
+          nState = GSLC_S_DEBUG_PRINT_UINT16;
           nNumRemain = va_arg(vlist,unsigned);
           bNumNeg = false;
           bNumStart = false;
           nNumDivisor = nMaxDivisor;
 
         } else if (cFmt == 'c') {
-          nState = GSLC_DEBUG2_PRINT_CHAR;
+          nState = GSLC_S_DEBUG_PRINT_CHAR;
           cOut = (char)va_arg(vlist,unsigned);
 
         } else if (cFmt == 's') {
-          nState = GSLC_DEBUG2_PRINT_STR;
+          nState = GSLC_S_DEBUG_PRINT_STR;
           pStr = va_arg(vlist,char*);
 
         } else if (cFmt == 'z') {
-          nState = GSLC_DEBUG2_PRINT_STR_P;
+          nState = GSLC_S_DEBUG_PRINT_STR_P;
           pStr = va_arg(vlist,char*);
         } else {
           // ERROR
         }
         nFmtInd++; // Advance format index
 
-      } else if (nState == GSLC_DEBUG2_PRINT_STR) {
+      } else if (nState == GSLC_S_DEBUG_PRINT_STR) {
         while (*pStr != 0) {
           cOut = *pStr;
           (g_pfDebugOut)(cOut);
           pStr++;
         }
-        nState = GSLC_DEBUG2_PRINT_NORM;
+        nState = GSLC_S_DEBUG_PRINT_NORM;
         // Don't advance format string index
 
-      } else if (nState == GSLC_DEBUG2_PRINT_STR_P) {
+      } else if (nState == GSLC_S_DEBUG_PRINT_STR_P) {
         do {
           #if (GSLC_USE_PROGMEM)
           cOut = pgm_read_byte(pStr);
@@ -449,14 +449,14 @@ void gslc_DebugPrintf(const char* pFmt, ...)
             pStr++;
           }
         } while (cOut != 0);
-        nState = GSLC_DEBUG2_PRINT_NORM;
+        nState = GSLC_S_DEBUG_PRINT_NORM;
         // Don't advance format string index
 
-      } else if (nState == GSLC_DEBUG2_PRINT_CHAR) {
+      } else if (nState == GSLC_S_DEBUG_PRINT_CHAR) {
         (g_pfDebugOut)(cOut);
-        nState = GSLC_DEBUG2_PRINT_NORM;
+        nState = GSLC_S_DEBUG_PRINT_NORM;
 
-      } else if (nState == GSLC_DEBUG2_PRINT_UINT16) {
+      } else if (nState == GSLC_S_DEBUG_PRINT_UINT16) {
 
         // Handle the negation flag if required
         if (bNumNeg) {
@@ -493,7 +493,7 @@ void gslc_DebugPrintf(const char* pFmt, ...)
         // Detect end of digit decode (ie. 1's)
         if (nNumDivisor == 1) {
           // Done
-          nState = GSLC_DEBUG2_PRINT_NORM;
+          nState = GSLC_S_DEBUG_PRINT_NORM;
         } else {
           // Shift the divisor by an order of magnitude
           nNumDivisor /= 10;
@@ -686,7 +686,7 @@ void gslc_Update(gslc_tsGui* pGui)
   pGui->nFrameRateCnt++;
   uint32_t  nElapsed = (time(NULL) - pGui->nFrameRateStart);
   if (nElapsed > 0) {
-    GSLC_DEBUG2_PRINT("Update rate: %6u / sec\n",pGui->nFrameRateCnt);
+    GSLC_DEBUG_PRINT("Update rate: %6u / sec\n",pGui->nFrameRateCnt);
     pGui->nFrameRateStart = time(NULL);
     pGui->nFrameRateCnt = 0;
   }
@@ -1350,7 +1350,7 @@ void gslc_InvalidateRgnReset(gslc_tsGui* pGui)
 void gslc_InvalidateRgnScreen(gslc_tsGui* pGui)
 {
 #if defined(DBG_REDRAW)
-  GSLC_DEBUG2_PRINT("DBG: InvRgnScreen\n", "");
+  GSLC_DEBUG_PRINT("DBG: InvRgnScreen\n", "");
 #endif
   pGui->bInvalidateEn = true;
   pGui->rInvalidateRect = (gslc_tsRect) { 0, 0, pGui->nDispW, pGui->nDispH };
@@ -1362,7 +1362,7 @@ void gslc_InvalidateRgnPage(gslc_tsGui* pGui, gslc_tsPage* pPage)
     return;
   }
 #if defined(DBG_REDRAW)
-  GSLC_DEBUG2_PRINT("DBG: InvRgnPage: Page=%d (%d,%d)-(%d,%d)\n",
+  GSLC_DEBUG_PRINT("DBG: InvRgnPage: Page=%d (%d,%d)-(%d,%d)\n",
     pPage->nPageId,
     pPage->rBounds.x, pPage->rBounds.y, pPage->rBounds.x + pPage->rBounds.w - 1, pPage->rBounds.y + pPage->rBounds.h - 1); //xxx
 #endif // DBG_REDRAW
@@ -1869,7 +1869,7 @@ void gslc_SetStackPage(gslc_tsGui* pGui, uint8_t nStackPos, int16_t nPageId)
   if (nPageId == GSLC_PAGE_NONE) {
     // Disable the page
     #if defined(DEBUG_LOG)
-    GSLC_DEBUG2_PRINT("INFO: Disabled PageStack[%u]\n",nStackPos);
+    GSLC_DEBUG_PRINT("INFO: Disabled PageStack[%u]\n",nStackPos);
     #endif
     pPage = NULL;
   } else {
@@ -1886,7 +1886,7 @@ void gslc_SetStackPage(gslc_tsGui* pGui, uint8_t nStackPos, int16_t nPageId)
   pGui->apPageStack[nStackPos] = pPage;
 
   #if defined(DEBUG_LOG)
-  GSLC_DEBUG2_PRINT("INFO: Changed PageStack[%u] to page %u\n",nStackPos,nPageId);
+  GSLC_DEBUG_PRINT("INFO: Changed PageStack[%u] to page %u\n",nStackPos,nPageId);
   #endif
 
   // A change of page should always force a future redraw
@@ -2083,7 +2083,7 @@ void gslc_PageRedrawGo(gslc_tsGui* pGui)
     // even if we later discover that the changed element is on
     // a page in the stack that has been disabled through
     // abPageStackDoDraw[] = false.
-    GSLC_DEBUG2_PRINT("DBG: PageRedrawGo() InvRgn: En=%d (%d,%u)-(%d,%d) PageRedraw=%d\n",
+    GSLC_DEBUG_PRINT("DBG: PageRedrawGo() InvRgn: En=%d (%d,%u)-(%d,%d) PageRedraw=%d\n",
       pGui->bInvalidateEn, pGui->rInvalidateRect.x, pGui->rInvalidateRect.y,
       pGui->rInvalidateRect.x + pGui->rInvalidateRect.w - 1,
       pGui->rInvalidateRect.y + pGui->rInvalidateRect.h - 1, bPageRedraw);
@@ -2444,8 +2444,8 @@ gslc_tsElemRef* gslc_ElemCreateTxt(gslc_tsGui* pGui,int16_t nElemId,int16_t nPag
   sElem = gslc_ElemCreate(pGui,nElemId,nPage,GSLC_TYPE_TXT,rElem,pStrBuf,nStrBufMax,nFontId);
   sElem.colElemFill       = GSLC_COL_BLACK;
   sElem.colElemFillGlow   = GSLC_COL_BLACK;
-  sElem.colElemFrame      = GSLC_COL_BLACK;
-  sElem.colElemFrameGlow  = GSLC_COL_BLACK;
+  sElem.colElemFrame      = GSLC_COL_GRAY;
+  sElem.colElemFrameGlow  = GSLC_COL_GRAY;
   sElem.colElemText       = GSLC_COL_YELLOW;
   sElem.colElemTextGlow   = GSLC_COL_YELLOW;
   sElem.nFeatures        |= GSLC_ELEM_FEA_FILL_EN;
@@ -3726,7 +3726,7 @@ bool gslc_CollectTouchCompound(void* pvGui, void* pvElemRef, gslc_teTouch eTouch
 void gslc_TrackInput(gslc_tsGui* pGui,gslc_tsPage* pPage,gslc_teInputRawEvent eInputEvent,int16_t nInputVal)
 {
 #if !(GSLC_FEATURE_INPUT)
-  GSLC_DEBUG2_PRINT("WARNING: GSLC_FEATURE_INPUT not enabled in GUIslice config%s\n", "");
+  GSLC_DEBUG_PRINT("WARNING: GSLC_FEATURE_INPUT not enabled in GUIslice config%s\n", "");
   return;
 #else
   if (pGui == NULL) {
@@ -4256,7 +4256,7 @@ gslc_tsElemRef* gslc_CollectElemAdd(gslc_tsGui* pGui,gslc_tsCollect* pCollect,co
   //   variable.
 
   #if defined(DBG_LOG)
-  GSLC_DEBUG2_PRINT("INFO: Added %u elements to current page (max=%u), ElemId=%u\n",
+  GSLC_DEBUG_PRINT("INFO: Added %u elements to current page (max=%u), ElemId=%u\n",
           pCollect->nElemCnt+1,pCollect->nElemMax,pElem->nId);
   #endif
 
