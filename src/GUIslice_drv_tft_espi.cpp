@@ -83,6 +83,23 @@ extern "C" {
 TFT_eSPI m_disp = TFT_eSPI();
 
 
+// ------------------------------------------------------------------------
+// Load storage drivers
+// - Support SD card interface
+// ------------------------------------------------------------------------
+#if (GSLC_SD_EN)
+  #if (GSLC_SD_EN == 1)
+    // Use built-in SD library
+    // - Only supports HW SPI
+    #include <FS.h>
+    #include <SD.h>
+  #elif (GSLC_SD_EN == 2)
+    // Use greiman/SdFat library
+    // TODO
+    #error "GSLC_SD_EN=2 not yet implemented in TFT_eSPI mode"
+  #endif
+#endif
+ 
 
 // ------------------------------------------------------------------------
 #if defined(DRV_TOUCH_ADA_STMPE610)
@@ -98,15 +115,18 @@ TFT_eSPI m_disp = TFT_eSPI();
   #else // No interface flag set
     #error "DRV_TOUCH_ADA_STMPE610 but no ADATOUCH_I2C_* or ADATOUCH_SPI_* set in config"
   #endif
+  #define DRV_TOUCH_INSTANCE
 // ------------------------------------------------------------------------
 #elif defined(DRV_TOUCH_ADA_FT6206)
   const char* m_acDrvTouch = "FT6206(I2C)";
   // Always use I2C
   Adafruit_FT6206 m_touch = Adafruit_FT6206();
+  #define DRV_TOUCH_INSTANCE
 // ------------------------------------------------------------------------
 #elif defined(DRV_TOUCH_ADA_SIMPLE)
   const char* m_acDrvTouch = "SIMPLE(Analog)";
   TouchScreen m_touch = TouchScreen(ADATOUCH_PIN_XP, ADATOUCH_PIN_YP, ADATOUCH_PIN_XM, ADATOUCH_PIN_YM, ADATOUCH_RX);
+  #define DRV_TOUCH_INSTANCE
 // ------------------------------------------------------------------------
 #elif defined(DRV_TOUCH_XPT2046_STM)
   const char* m_acDrvTouch = "XPT2046_STM(SPI-HW)";
@@ -114,11 +134,13 @@ TFT_eSPI m_disp = TFT_eSPI();
   XPT2046_DEFINE_DPICLASS;
   // XPT2046 driver from Arduino_STM32 by Serasidis (<XPT2046_touch.h>)
   XPT2046_touch m_touch(XPT2046_CS, XPT2046_spi); // Chip Select pin, SPI instance
+  #define DRV_TOUCH_INSTANCE
 // ------------------------------------------------------------------------
 #elif defined(DRV_TOUCH_XPT2046_PS)
   const char* m_acDrvTouch = "XPT2046_PS(SPI-HW)";
   // Use SPI, no IRQs
   XPT2046_Touchscreen m_touch(XPT2046_CS); // Chip Select pin
+  #define DRV_TOUCH_INSTANCE
 // ------------------------------------------------------------------------
 #elif defined(DRV_TOUCH_TFT_ESPI)
   const char* m_acDrvTouch = "TFT_eSPI(XPT2046)";
@@ -170,10 +192,25 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
     // the rotation parameters and clipping region
     gslc_DrvRotate(pGui,GSLC_ROTATE);
 
+    // Initialize SD card usage
+    #if (GSLC_SD_EN)
+      #if (!defined(ADAGFX_PIN_SDCS))
+        #error "ERROR: ADAGFX_PIN_SDCS must be defined in config for SD support"
+      #endif
+      if (!SD.begin(ADAGFX_PIN_SDCS)) {
+        GSLC_DEBUG_PRINT("ERROR: DrvInit() SD init failed\n", 0);
+        return false;
+      }
+    #endif
+
   }
   return true;
 }
 
+void* gslc_DrvGetDriverDisp(gslc_tsGui* pGui)
+{
+  return (void*)(&m_disp);
+}
 
 void gslc_DrvDestruct(gslc_tsGui* pGui)
 {
@@ -723,14 +760,14 @@ void gslc_DrvDrawBmp24FromMem(gslc_tsGui* pGui,int16_t nDstX, int16_t nDstY,cons
 // These read 16- and 32-bit types from the SD card file.
 // BMP data is stored little-endian, Arduino is little-endian too.
 // May need to reverse subscript order if porting elsewhere.
-uint16_t gslc_DrvRead16SD(File &f) {
+uint16_t gslc_DrvRead16SD(fs::File &f) {
   uint16_t result;
   ((uint8_t *)&result)[0] = f.read(); // LSB
   ((uint8_t *)&result)[1] = f.read(); // MSB
   return result;
 }
 
-uint32_t gslc_DrvRead32SD(File &f) {
+uint32_t gslc_DrvRead32SD(fs::File &f) {
   uint32_t result;
   ((uint8_t *)&result)[0] = f.read(); // LSB
   ((uint8_t *)&result)[1] = f.read();
@@ -840,9 +877,9 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
             r = sdbuffer[buffidx++];
             //xxx tft.pushColor(tft.Color565(r,g,b));
             gslc_tsColor nCol = (gslc_tsColor){r,g,b};
-            gslc_tsColor nColTrans = (gslc_tsColor){GSLC_BMP_TRANS_RGB};
             bool bDrawBit = true;
             if (GSLC_BMP_TRANS_EN) {
+				      gslc_tsColor nColTrans = pGui->sTransCol;
               if ((nCol.r == nColTrans.r) && (nCol.g == nColTrans.g) && (nCol.b == nColTrans.b)) {
                 bDrawBit = false;
               }
@@ -1038,6 +1075,18 @@ void gslc_DrvDrawBkgnd(gslc_tsGui* pGui)
   // ----- REFERENCE CODE end
 #endif // DRV_TOUCH_TFT_ESPI_FILTER
 
+void* gslc_DrvGetDriverTouch(gslc_tsGui* pGui)
+{
+  // As the touch driver instance is optional, we need to check for
+  // its existence before returning a pointer to it.
+  #if defined(DRV_TOUCH_INSTANCE)
+    return (void*)(&m_touch);
+  #else
+    return NULL;
+  #endif
+}
+
+
 bool gslc_DrvInitTouch(gslc_tsGui* pGui, const char* acDev) {
   if (pGui == NULL) {
     GSLC_DEBUG2_PRINT("ERROR: DrvInitTouch(%s) called with NULL ptr\n", "");
@@ -1205,6 +1254,17 @@ bool gslc_DrvGetTouch(gslc_tsGui* pGui, int16_t* pnX, int16_t* pnY, uint16_t* pn
         nOutputX = map(nInputX, pGui->nTouchCalXMin, pGui->nTouchCalXMax, 0, nDispOutMaxX);
         nOutputY = map(nInputY, pGui->nTouchCalYMin, pGui->nTouchCalYMax, 0, nDispOutMaxY);
         // Perform constraining to OUTPUT boundaries
+        // NOTE: TFT_eSPI's getTouch readings occasionally return spurious touch
+        //       events. These are often at the limit of the calibrated X/Y
+        //       space. Post constraint, this may appear as events with one
+        //       coordinate clipped to 0, for example. Bodmer provides
+        //       one additional check in that if the mapped coordinate
+        //       exceeds the positive bounds of the display (eg. 320px)
+        //       then he marks the touch event invalid. Doing this may
+        //       block some of the spurious events but not all (it would be
+        //       calibration dependent). If we do decide to add in a similar
+        //       check here, then we would want to force (bValid=false) here
+        //       and then only proceed after re-checking (bValid==true).
         nOutputX = constrain(nOutputX, 0, nDispOutMaxX);
         nOutputY = constrain(nOutputY, 0, nDispOutMaxY);
       } else {

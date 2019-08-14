@@ -629,7 +629,8 @@ typedef struct gslc_tsElem {
   gslc_tsColor        colElemText;      ///< Color of overlay text
   gslc_tsColor        colElemTextGlow;  ///< Color of overlay text when glowing
   int8_t              eTxtAlign;        ///< Alignment of overlay text
-  uint8_t             nTxtMargin;       ///< Margin of overlay text within rect region
+  int8_t              nTxtMarginX;      ///< Margin of overlay text within rect region (x offset)
+  int8_t              nTxtMarginY;      ///< Margin of overlay text within rect region (y offset)
   gslc_tsFont*        pTxtFont;         ///< Ptr to Font for overlay text
 
   // Extended data elements
@@ -739,6 +740,8 @@ typedef struct {
 
   uint8_t             nRoundRadius;     ///< Radius for rounded elements
 
+  gslc_tsColor        sTransCol;        ///< Color used for transparent image regions (GSLC_BMP_TRANS_EN=1)
+
 #if (GSLC_FEATURE_COMPOUND)
   gslc_tsElem         sElemTmp;         ///< Temporary element
   gslc_tsElemRef      sElemRefTmp;      ///< Temporary element reference
@@ -834,6 +837,34 @@ const char* gslc_GetNameDisp(gslc_tsGui* pGui);
 /// \return String containing driver name
 ///
 const char* gslc_GetNameTouch(gslc_tsGui* pGui);
+
+///
+/// Get the native display driver instance
+/// - This can be useful to access special commands
+///   available in the selected driver.
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return Void pointer to the display driver instance.
+///         This pointer should be typecast to the particular
+///         driver being used. If no driver was created then
+///         this function will return NULL.
+///
+void* gslc_GetDriverDisp(gslc_tsGui* pGui);
+
+///
+/// Get the native touch driver instance
+/// - This can be useful to access special commands
+///   available in the selected driver.
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return Void pointer to the touch driver instance.
+///         This pointer should be typecast to the particular
+///         driver being used. If no driver was created then
+///         this function will return NULL.
+///
+void* gslc_GetDriverTouch(gslc_tsGui* pGui);
 
 ///
 /// Initialize the GUIslice library
@@ -940,6 +971,19 @@ bool gslc_SetBkgndImage(gslc_tsGui* pGui,gslc_tsImgRef sImgRef);
 /// \return true if success, false if fail
 ///
 bool gslc_SetBkgndColor(gslc_tsGui* pGui,gslc_tsColor nCol);
+
+///
+/// Configure the color to use for image transparency
+/// - Drawing a BMP with transparency enabled will cause
+///   regions in this specific color to appear transparent
+/// - This API overrides the config option GSLC_BMP_TRANS_RGB
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  nCol:        RGB Color to use
+///
+/// \return true if success, false if fail
+///
+bool gslc_SetTransparentColor(gslc_tsGui* pGui,gslc_tsColor nCol);
 
 ///
 /// Set the clipping rectangle for further drawing
@@ -1439,6 +1483,59 @@ void gslc_DrawFrameQuad(gslc_tsGui* pGui,gslc_tsPt* psPt,gslc_tsColor nCol);
 ///
 void gslc_DrawFillQuad(gslc_tsGui* pGui,gslc_tsPt* psPt,gslc_tsColor nCol);
 
+///
+/// Draw a gradient filled sector of a circle with support for inner and outer radius
+/// - Can be used to create a ring or pie chart
+/// - Note that the gradient fill is defined by both the color stops (cArcStart..cArcEnd) as well as
+///   a gradient angular range (nAngGradStart..nAngGradStart+nAngGradRange). This gradient angular
+///   range can be differeng from the drawing angular range (nAngSegStart..nAngSecEnd) to enable
+///   more advanced control styling / updates.
+///
+/// \param[in]  pGui:          Pointer to GUI
+/// \param[in]  nQuality:      Number of segments used to depict a full circle.
+///                            The higher the value, the smoother the resulting
+///                            arcs. A value of 72 provides 360/72=5 degrees per
+///                            segment which is a reasonable compromise between
+///                            smoothness and performance.
+/// \param[in]  nMidX:         Midpoint X coordinate of circle
+/// \param[in]  nMidY:         Midpoint Y coordinate of circle
+/// \param[in]  nRad1:         Inner sector radius (0 for sector / pie, non-zero for ring)
+/// \param[in]  nRad2:         Outer sector radius. Delta from nRad1 defines ring thickness.
+/// \param[in]  cArcStart:     Start color for gradient fill (with angular range defined by nAngGradStart,nAngGradRange)
+/// \param[in]  cArcEnd:       End color for gradient fill
+/// \param[in]  nAngSecStart:  Angle of start of sector drawing (0 at top), measured in degrees.
+/// \param[in]  nAngSecEnd:    Angle of end of sector drawing (0 at top), measured in degrees.
+/// \param[in]  nAngGradStart: For gradient fill, defines the starting angle associated with the starting color (cArcStart)
+/// \param[in]  nAngGradRange: For gradient fill, defines the angular range associated with the start-to-end color range (cArcStart..cArcEnd)
+///
+/// \return none
+///
+void gslc_DrawFillGradSector(gslc_tsGui* pGui, int16_t nQuality, int16_t nMidX, int16_t nMidY, int16_t nRad1, int16_t nRad2,
+  gslc_tsColor cArcStart, gslc_tsColor cArcEnd, int16_t nAngSecStart, int16_t nAngSecEnd, int16_t nAngGradStart, int16_t nAngGradRange);
+
+///
+/// Draw a flat filled sector of a circle with support for inner and outer radius
+/// - Can be used to create a ring or pie chart
+///
+///
+/// \param[in]  pGui:          Pointer to GUI
+/// \param[in]  nQuality:      Number of segments used to depict a full circle.
+///                            The higher the value, the smoother the resulting
+///                            arcs. A value of 72 provides 360/72=5 degrees per
+///                            segment which is a reasonable compromise between
+///                            smoothness and performance.
+/// \param[in]  nMidX:         Midpoint X coordinate of circle
+/// \param[in]  nMidY:         Midpoint Y coordinate of circle
+/// \param[in]  nRad1:         Inner sector radius (0 for sector / pie, non-zero for ring)
+/// \param[in]  nRad2:         Outer sector radius. Delta from nRad1 defines ring thickness.
+/// \param[in]  cArc:          Color for flat fill
+/// \param[in]  nAngSecStart:  Angle of start of sector drawing (0 at top), measured in degrees.
+/// \param[in]  nAngSecEnd:    Angle of end of sector drawing (0 at top), measured in degrees.
+///
+/// \return none
+///
+void gslc_DrawFillSector(gslc_tsGui* pGui, int16_t nQuality, int16_t nMidX, int16_t nMidY, int16_t nRad1, int16_t nRad2,
+  gslc_tsColor cArc, int16_t nAngSecStart, int16_t nAngSecEnd);
 
 // -----------------------------------------------------------------------
 /// @}
@@ -1939,6 +2036,17 @@ void gslc_ElemSetTxtAlign(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,unsigned nAl
 ///
 void gslc_ElemSetTxtMargin(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,unsigned nMargin);
 
+/// Set the margin around of a textual element (X & Y offsets can be different)
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  pElemRef:    Pointer to Element reference
+/// \param[in]  nMarginX:    Number of pixels gap to offset text horizontally
+/// \param[in]  nMarginY:    Number of pixels gap to offset text vertically
+///
+/// \return none
+///
+void gslc_ElemSetTxtMarginXY(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,int8_t nMarginX,int8_t nMarginY);
+
 ///
 /// Update the text string associated with an Element
 ///
@@ -2121,13 +2229,29 @@ void gslc_ElemSetVisible(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef,bool bVisible
 
 ///
 /// Get the visibility status for an element
+/// - Note that the visibility state is independent of
+///   whether or not the page associated with the element
+///   is actively displayed.
 ///
 /// \param[in]  pGui:        Pointer to GUI
 /// \param[in]  pElemRef:    Pointer to Element reference
 ///
-/// \return True if element is shown, false if hidden
+/// \return True if element is marked as visible, false if hidden
 ///
 bool gslc_ElemGetVisible(gslc_tsGui* pGui,gslc_tsElemRef* pElemRef);
+
+///
+/// Determine whether an element is visible on the screen
+/// - This function takes into account both the element's
+///   "Visible" state as well as whether the element's
+///   associated page is active in the page stack.
+///
+/// \param[in]  pGui:        Pointer to GUI
+/// \param[in]  pElemRef:    Pointer to Element reference
+///
+/// \return True if element appears on the screen, false otherwise
+///
+bool gslc_ElemGetOnScreen(gslc_tsGui* pGui, gslc_tsElemRef* pElemRef);
 
 /* UNUSED
 ///
@@ -2509,6 +2633,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       colTxt,                                                     \
       nAlignTxt,                                                  \
       0,                                                          \
+      0,                                                          \
       pFont,                                                      \
       NULL,                                                       \
       NULL,                                                       \
@@ -2539,6 +2664,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       colTxt,                                                     \
       colTxt,                                                     \
       nAlignTxt,                                                  \
+      0,                                                          \
       0,                                                          \
       pFont,                                                      \
       NULL,                                                       \
@@ -2571,6 +2697,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       GSLC_COL_WHITE,                                             \
       GSLC_ALIGN_MID_MID,                                         \
       0,                                                          \
+      0,                                                          \
       NULL,                                                       \
       NULL,                                                       \
       NULL,                                                       \
@@ -2599,6 +2726,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       GSLC_COL_WHITE,                                             \
       GSLC_COL_WHITE,                                             \
       GSLC_ALIGN_MID_MID,                                         \
+      0,                                                          \
       0,                                                          \
       NULL,                                                       \
       NULL,                                                       \
@@ -2632,6 +2760,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       colTxt,                                                     \
       nAlignTxt,                                                  \
       0,                                                          \
+      0,                                                          \
       pFont,                                                      \
       (void*)extraData,                                           \
       NULL,                                                       \
@@ -2662,6 +2791,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       colTxt,                                                     \
       colTxt,                                                     \
       nAlignTxt,                                                  \
+      0,                                                          \
       0,                                                          \
       pFont,                                                      \
       (void*)extraData,                                           \
@@ -2698,6 +2828,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       colTxt,                                                     \
       nAlignTxt,                                                  \
       0,                                                          \
+      0,                                                          \
       pFont,                                                      \
       NULL,                                                       \
       NULL,                                                       \
@@ -2728,6 +2859,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       colTxt,                                                     \
       colTxt,                                                     \
       nAlignTxt,                                                  \
+      0,                                                          \
       0,                                                          \
       pFont,                                                      \
       NULL,                                                       \
@@ -2760,6 +2892,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       GSLC_COL_WHITE,                                             \
       GSLC_ALIGN_MID_MID,                                         \
       0,                                                          \
+      0,                                                          \
       NULL,                                                       \
       NULL,                                                       \
       NULL,                                                       \
@@ -2788,6 +2921,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       GSLC_COL_WHITE,                                             \
       GSLC_COL_WHITE,                                             \
       GSLC_ALIGN_MID_MID,                                         \
+      0,                                                          \
       0,                                                          \
       NULL,                                                       \
       NULL,                                                       \
@@ -2820,6 +2954,7 @@ void gslc_InputMapAdd(gslc_tsGui* pGui,gslc_teInputRawEvent eInputEvent,int16_t 
       colTxt,                                                     \
       colTxt,                                                     \
       nAlignTxt,                                                  \
+      0,                                                          \
       0,                                                          \
       pFont,                                                      \
       (void*)extraData,                                           \

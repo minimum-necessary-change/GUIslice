@@ -52,7 +52,11 @@
 
 
 #if defined(DRV_TOUCH_URTOUCH)
-  #include <URTouch.h>
+  #if defined(DRV_TOUCH_URTOUCH_OLD)
+    #include <UTouch.h> // Select old version of URTouch
+  #else
+    #include <URTouch.h>
+  #endif
 #endif
 
 
@@ -70,12 +74,16 @@ extern "C" {
 // ------------------------------------------------------------------------
 #endif // DRV_DISP_*
 
-
-
 // ------------------------------------------------------------------------
 #if defined(DRV_TOUCH_URTOUCH)
-  const char* m_acDrvTouch = "URTOUCH";
-  URTouch m_touch(DRV_TOUCH_URTOUCH_INIT);
+  #if defined(DRV_TOUCH_URTOUCH_OLD)
+    const char* m_acDrvTouch = "URTOUCH_OLD";
+    UTouch m_touch(DRV_TOUCH_URTOUCH_INIT);
+  #else
+    const char* m_acDrvTouch = "URTOUCH";
+    URTouch m_touch(DRV_TOUCH_URTOUCH_INIT);
+  #endif
+  #define DRV_TOUCH_INSTANCE
 // ------------------------------------------------------------------------
 #elif defined(DRV_TOUCH_INPUT)
   const char* m_acDrvTouch = "INPUT";
@@ -143,6 +151,10 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
   return true;
 }
 
+void* gslc_DrvGetDriverDisp(gslc_tsGui* pGui)
+{
+  return (void*)(&m_disp);
+}
 
 void gslc_DrvDestruct(gslc_tsGui* pGui)
 {
@@ -768,9 +780,9 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
             r = sdbuffer[buffidx++];
             //xxx tft.pushColor(tft.Color565(r,g,b));
             gslc_tsColor nCol = (gslc_tsColor){r,g,b};
-            gslc_tsColor nColTrans = (gslc_tsColor){GSLC_BMP_TRANS_RGB};
             bool bDrawBit = true;
             if (GSLC_BMP_TRANS_EN) {
+              gslc_tsColor nColTrans = pGui->sTransCol;
               if ((nCol.r == nColTrans.r) && (nCol.g == nColTrans.g) && (nCol.b == nColTrans.b)) {
                 bDrawBit = false;
               }
@@ -914,6 +926,16 @@ bool gslc_DrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
   return true;
 }
 
+void* gslc_DrvGetDriverTouch(gslc_tsGui* pGui)
+{
+  // As the touch driver instance is optional, we need to check for
+  // its existence before returning a pointer to it.
+  #if defined(DRV_TOUCH_INSTANCE)
+    return (void*)(&m_touch);
+  #else
+    return NULL;
+  #endif
+}
 
 bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal)
 {
@@ -1001,8 +1023,8 @@ bool gslc_TDrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPr
     // - This is detected by URTouch / URTouch_Calibration
     // - The calibration settings are stored in URTouch/URTouchCD.h
 
-    uint16_t  nRawX,nRawY;
-    uint16_t  nRawPress;
+    int16_t   nRawX,nRawY;
+    uint16_t  nRawPress = 0;
     bool bTouchOk = true;
 
     if (!m_touch.dataAvailable()) {

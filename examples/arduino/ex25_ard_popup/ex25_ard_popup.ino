@@ -19,24 +19,44 @@
 //
 
 #include "GUIslice.h"
-#include "GUIslice_ex.h"
 #include "GUIslice_drv.h"
 
+// Include any extended elements
+#include "elem/XProgress.h"
 
-// Determine whether to load Adafruit-GFX extra fonts or Teensy fonts
-#if defined(DRV_DISP_ADAGFX_ILI9341_T3)
-  #define FONTS_T3
-#endif
 
-// Note that font files are located within the Adafruit-GFX library folder:
+// ------------------------------------------------
+// Load specific fonts
+// ------------------------------------------------
+
 //<Fonts !Start!>
-#if defined(FONTS_T3)
-  #include <font_Arial.h>
+// To demonstrate additional fonts, uncomment the following line:
+//#define USE_EXTRA_FONTS
+
+// Different display drivers provide different fonts, so a few examples
+// have been provided and selected here. Font files are usually
+// located within the display library folder or fonts subfolder.
+#ifdef USE_EXTRA_FONTS
+  #if defined(DRV_DISP_TFT_ESPI) // TFT_eSPI
+    #include <TFT_eSPI.h>
+    #define FONT_NAME1 &FreeSans9pt7b
+  #elif defined(DRV_DISP_ADAGFX_ILI9341_T3) // Teensy
+    #include <font_Arial.h>
+    #define FONT_NAME1 &Arial_8
+    #define SET_FONT_MODE1 // Enable Teensy extra fonts
+  #else // Arduino, etc.
+    #include <Adafruit_GFX.h>
+    #include <gfxfont.h>
+    #include "Fonts/FreeSans9pt7b.h"
+    #define FONT_NAME1 &FreeSans9pt7b
+  #endif
 #else
-  #include <Adafruit_GFX.h>
-  #include "Fonts/FreeSans9pt7b.h"
+  // Use the default font
+  #define FONT_NAME1 NULL
 #endif
 //<Fonts !End!>
+// ------------------------------------------------
+
 
 // ------------------------------------------------
 // Defines for resources
@@ -77,7 +97,7 @@ gslc_tsElem                     m_asPage1Elem[MAX_ELEM_PG_MAIN_RAM];
 gslc_tsElemRef                  m_asPage1ElemRef[MAX_ELEM_PG_MAIN];
 gslc_tsElem                     m_asPage2Elem[MAX_ELEM_PG_POPUP_RAM];
 gslc_tsElemRef                  m_asPage2ElemRef[MAX_ELEM_PG_POPUP];
-gslc_tsXGauge                   m_sXGauge[1];
+gslc_tsXProgress                m_sXGauge[1];
 
 #define MAX_STR                 100
 
@@ -176,7 +196,7 @@ bool InitGUI()
   m_pTxtStatus = pElemRef;
 
   // Create progress bar E_PROGRESS 
-  pElemRef = gslc_ElemXGaugeCreate(&m_gui, E_PROGRESS, E_PG_MAIN, &m_sXGauge[0],
+  pElemRef = gslc_ElemXProgressCreate(&m_gui, E_PROGRESS, E_PG_MAIN, &m_sXGauge[0],
     (gslc_tsRect) { 70, 68, 100, 20 }, 0, 100, 0, GSLC_COL_GREEN, false);
   m_pElemProgress = pElemRef;
 
@@ -234,13 +254,12 @@ void setup()
   // Load Fonts
   // ------------------------------------------------
   //<Load_Fonts !Start!>
-#if defined(FONTS_T3)
-  if (!gslc_FontSet(&m_gui, E_FONT_SANS1, GSLC_FONTREF_PTR, &Arial_12, 1)) { return; }
+  if (!gslc_FontSet(&m_gui, E_FONT_SANS1, GSLC_FONTREF_PTR, FONT_NAME1, 1)) { return; }
   if (!gslc_FontSet(&m_gui, E_FONT_TXT2, GSLC_FONTREF_PTR, NULL, 2)) { return; }
-#else
-  if (!gslc_FontSet(&m_gui, E_FONT_SANS1, GSLC_FONTREF_PTR, &FreeSans9pt7b, 1)) { return; }
-  if (!gslc_FontSet(&m_gui, E_FONT_TXT2, GSLC_FONTREF_PTR, NULL, 2)) { return; }
-#endif
+  // Some display drivers need to set a mode to use the extra fonts
+  #if defined(SET_FONT_MODE1)
+    gslc_FontSetMode(&m_gui, E_FONT_SANS1, GSLC_FONTREF_MODE_1);
+  #endif
   //<Load_Fonts !End!>
 
   // ------------------------------------------------
@@ -273,7 +292,7 @@ void loop()
 
   // General counter
   m_nCount++;
-  gslc_ElemXGaugeUpdate(&m_gui, m_pElemProgress, ((m_nCount / 1) % 100));
+  gslc_ElemXProgressSetVal(&m_gui, m_pElemProgress, ((m_nCount / 1) % 100));
 
 
   // ------------------------------------------------

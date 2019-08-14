@@ -72,6 +72,8 @@ extern "C" {
   //#include "../configs/ard-shld-mcufriend_4wire.h"
   //#include "../configs/ard-shld-mcufriend_xpt2046.h"
   //#include "../configs/ard-shld-waveshare_28_touch.h"
+  //#include "../configs/ard-shld-waveshare_40_notouch.h"
+  //#include "../configs/ard-shld-waveshare_40_xpt2046.h"
   //#include "../configs/ard-shld-osmart_22_68130_touch.h"
   //#include "../configs/ard-adagfx-hx8347-xpt2046.h"
   //#include "../configs/ard-adagfx-hx8357-ft6206.h"
@@ -88,6 +90,8 @@ extern "C" {
   //#include "../configs/ard-adagfx-ra8875-notouch.h"
   //#include "../configs/ard-adagfx-ssd1306-notouch.h"
   //#include "../configs/ard-adagfx-st7735-notouch.h"
+  //#include "../configs/due-adagfx-ili9341-ft6206.h"
+  //#include "../configs/due-adagfx-ili9341-urtouch.h"
 
   // ESP8266, ESP32, M5stack, TTGO:
   // ------------------------------------------------------

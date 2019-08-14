@@ -52,7 +52,6 @@
 extern "C" {
 #endif // __cplusplus
 
-
   // Define driver naming
   const char* m_acDrvDisp = "M5STACK";
   const char* m_acDrvTouch = "M5STACK(NONE)";
@@ -105,6 +104,10 @@ bool gslc_DrvInit(gslc_tsGui* pGui)
   return true;
 }
 
+void* gslc_DrvGetDriverDisp(gslc_tsGui* pGui)
+{
+  return (void*)(&m_disp);
+}
 
 void gslc_DrvDestruct(gslc_tsGui* pGui)
 {
@@ -719,9 +722,9 @@ void gslc_DrvDrawBmp24FromSD(gslc_tsGui* pGui,const char *filename, uint16_t x, 
             r = sdbuffer[buffidx++];
             //xxx tft.pushColor(tft.Color565(r,g,b));
             gslc_tsColor nCol = (gslc_tsColor){r,g,b};
-            gslc_tsColor nColTrans = (gslc_tsColor){GSLC_BMP_TRANS_RGB};
             bool bDrawBit = true;
             if (GSLC_BMP_TRANS_EN) {
+              gslc_tsColor nColTrans = pGui->sTransCol;
               if ((nCol.r == nColTrans.r) && (nCol.g == nColTrans.g) && (nCol.b == nColTrans.b)) {
                 bDrawBit = false;
               }
@@ -870,6 +873,16 @@ bool gslc_DrvInitTouch(gslc_tsGui* pGui,const char* acDev) {
   return true;
 }
 
+void* gslc_DrvGetDriverTouch(gslc_tsGui* pGui)
+{
+  // As the touch driver instance is optional, we need to check for
+  // its existence before returning a pointer to it.
+  #if defined(DRV_TOUCH_INSTANCE)
+    return (void*)(&m_touch);
+  #else
+    return NULL;
+  #endif
+}
 
 bool gslc_DrvGetTouch(gslc_tsGui* pGui,int16_t* pnX,int16_t* pnY,uint16_t* pnPress,gslc_teInputRawEvent* peInputEvent,int16_t* pnInputVal)
 {

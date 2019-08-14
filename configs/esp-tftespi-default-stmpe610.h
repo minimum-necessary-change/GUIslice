@@ -96,6 +96,10 @@ extern "C" {
 
   // For TFT_eSPI, the display wiring is defined by TFT_eSPI's User_Setup.h
 
+  // SD Card
+  //#define ADAGFX_PIN_SDCS    2 // ESP8266 + Adafruit FeatherWing 2.4"
+  #define ADAGFX_PIN_SDCS     14 // ESP32   + Adafruit FeatherWing 2.4"
+  //#define ADAGFX_PIN_SDCS    5 // Others  + Adafruit FeatherWing 2.4"
 
   // -----------------------------------------------------------------------------
   // SECTION 3: Orientation
@@ -129,7 +133,11 @@ extern "C" {
 
   // Touch bus & pinout
   #define ADATOUCH_I2C_ADDR   0x41  // Touch device I2C address (for ADATOUCH_I2C_HW=1)
+#ifdef ESP8266
+  #define ADATOUCH_PIN_CS     D0    // Touch device chip select (for ADATOUCH_SPI_HW=1)
+#elif ESP32
   #define ADATOUCH_PIN_CS     13    // Touch device chip select (for ADATOUCH_SPI_HW=1)
+#endif
 
 
   // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .

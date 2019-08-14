@@ -30,6 +30,12 @@
 // =======================================================================
 /// \file XGauge.c
 
+// *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+// WARNING: The XGauge element has been replaced by XProgress / XRadial / XRamp
+//          Please update your code according to the migration notes in:
+//          https://github.com/ImpulseAdventure/GUIslice/pull/157
+//          XGauge may be removed in a future release.
+// *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
 
 
 // GUIslice library
@@ -110,6 +116,7 @@ gslc_tsElemRef* gslc_ElemXGaugeCreate(gslc_tsGui* pGui,int16_t nElemId,int16_t n
   sElem.colElemFillGlow   = GSLC_COL_BLACK;
   sElem.colElemFrame      = GSLC_COL_GRAY;
   sElem.colElemFrameGlow  = GSLC_COL_GRAY;
+  GSLC_DEBUG_PRINT("NOTE: XGauge has been replaced by XProgress/XRadial/XRamp\n","");
   if (nPage != GSLC_PAGE_NONE) {
     pElemRef = gslc_ElemAdd(pGui,nPage,&sElem,GSLC_ELEMREF_DEFAULT);
     return pElemRef;

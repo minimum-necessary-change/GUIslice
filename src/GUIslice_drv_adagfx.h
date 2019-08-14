@@ -72,6 +72,10 @@ extern "C" {
 #elif defined(DRV_TOUCH_XPT2046_PS)
   #define DRV_TOUCH_TYPE_EXTERNAL
   #define DRV_TOUCH_TYPE_RES         // Resistive
+#elif defined(DRV_TOUCH_URTOUCH)
+  #define DRV_TOUCH_TYPE_EXTERNAL
+  // Don't set DRV_TOUCH_TYPE_RES since URTouch provides its own calibration
+  //#define DRV_TOUCH_TYPE_RES         // Resistive  
 #elif defined(DRV_TOUCH_INPUT)
   #define DRV_TOUCH_TYPE_EXTERNAL
 #elif defined(DRV_TOUCH_HANDLER)
@@ -104,6 +108,24 @@ extern "C" {
 #define DRV_HAS_DRAW_TEXT              1 ///< Support gslc_DrvDrawTxt()
 
 #define DRV_OVERRIDE_TXT_ALIGN         0 ///< Driver provides text alignment
+
+
+// -----------------------------------------------------------------------
+// Driver-specific overrides
+// - Some drivers have exceptions to the above support configuration
+// -----------------------------------------------------------------------
+#if defined(DRV_DISP_WAVESHARE_ILI9486)
+  #undef DRV_HAS_DRAW_RECT_ROUND_FRAME
+  #undef DRV_HAS_DRAW_RECT_ROUND_FILL
+  #undef DRV_HAS_DRAW_TRI_FRAME
+  #undef DRV_HAS_DRAW_TRI_FILL
+
+  #define DRV_HAS_DRAW_RECT_ROUND_FRAME  0 ///< Support gslc_DrvDrawFrameRoundRect()
+  #define DRV_HAS_DRAW_RECT_ROUND_FILL   0 ///< Support gslc_DrvDrawFillRoundRect()
+  #define DRV_HAS_DRAW_TRI_FRAME         0 ///< Support gslc_DrvDrawFrameTriangle()
+  #define DRV_HAS_DRAW_TRI_FILL          0 ///< Support gslc_DrvDrawFillTriangle()
+#endif
+
 
 // =======================================================================
 // Driver-specific members
@@ -189,6 +211,34 @@ const char* gslc_DrvGetNameDisp(gslc_tsGui* pGui);
 /// \return String containing driver name
 ///
 const char* gslc_DrvGetNameTouch(gslc_tsGui* pGui);
+
+///
+/// Get the native display driver instance
+/// - This can be useful to access special commands
+///   available in the selected driver.
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return Void pointer to the display driver instance.
+///         This pointer should be typecast to the particular
+///         driver being used. If no driver was created then
+///         this function will return NULL.
+///
+void* gslc_DrvGetDriverDisp(gslc_tsGui* pGui);
+
+///
+/// Get the native touch driver instance
+/// - This can be useful to access special commands
+///   available in the selected driver.
+///
+/// \param[in]  pGui:      Pointer to GUI
+///
+/// \return Void pointer to the touch driver instance.
+///         This pointer should be typecast to the particular
+///         driver being used. If no driver was created then
+///         this function will return NULL.
+///
+void* gslc_DrvGetDriverTouch(gslc_tsGui* pGui);
 
 // -----------------------------------------------------------------------
 // Image/surface handling Functions

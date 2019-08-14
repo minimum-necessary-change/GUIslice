@@ -25,14 +25,43 @@
 // Include any extended elements
 #include "elem/XListbox.h"
 
-#include <Adafruit_GFX.h>
+// ------------------------------------------------
+// Load specific fonts
+// ------------------------------------------------
+
+// To demonstrate additional fonts, uncomment the following line:
+//#define USE_EXTRA_FONTS
+
+// Different display drivers provide different fonts, so a few examples
+// have been provided and selected here. Font files are usually
+// located within the display library folder or fonts subfolder.
+#ifdef USE_EXTRA_FONTS
+  #if defined(DRV_DISP_TFT_ESPI) // TFT_eSPI
+    #include <TFT_eSPI.h>
+    #define FONT_NAME1 &FreeSans9pt7b
+  #elif defined(DRV_DISP_ADAGFX_ILI9341_T3) // Teensy
+    #include <font_Arial.h>
+    #define FONT_NAME1 &Arial_9
+    #define SET_FONT_MODE1 // Enable Teensy extra fonts
+  #else // Arduino, etc.
+    #include <Adafruit_GFX.h>
+    #include <gfxfont.h>
+    #include "Fonts/FreeSans9pt7b.h"
+    #define FONT_NAME1 &FreeSans9pt7b
+  #endif
+#else
+  // Use the default font
+  #define FONT_NAME1 NULL
+#endif
+// ------------------------------------------------
 
 // To demonstrate additional fonts, uncomment the following line:
 //#define USE_EXTRA_FONTS
 
 #ifdef USE_EXTRA_FONTS
   // Note that these files are located within the Adafruit-GFX library folder:
-#include "Fonts/FreeSansBold9pt7b.h"
+  #include <Adafruit_GFX.h>
+  #include "Fonts/FreeSansBold9pt7b.h"
 #endif
 
 // Defines for resources
@@ -93,7 +122,7 @@ bool CbListbox(void* pvGui, void* pvElemRef, int16_t nSelId)
 {
   gslc_tsGui*     pGui = (gslc_tsGui*)(pvGui);
   gslc_tsElemRef* pElemRef = (gslc_tsElemRef*)(pvElemRef);
-  gslc_tsElem*    pElem = gslc_GetElemFromRef(pGui, pElemRef);
+  //gslc_tsElem*    pElem = gslc_GetElemFromRef(pGui, pElemRef);
   if (pElemRef == NULL) {
     return false;
   }
@@ -147,7 +176,6 @@ bool InitOverlays()
     (gslc_tsRect) { 60, 50, 160, 160 }, E_FONT_EXTRA, m_pXListboxBuf, 50, XLISTBOX_SEL_NONE);
   gslc_ElemXListboxSetSize(&m_gui, pElemRef, 4, 2);
   gslc_ElemXListboxItemsSetSize(&m_gui, pElemRef, XLISTBOX_SIZE_AUTO, XLISTBOX_SIZE_AUTO);
-  gslc_ElemXListboxItemsSetTxtMargin(&m_gui, pElemRef, 5, 8);
   gslc_ElemXListboxAddItem(&m_gui, pElemRef, "Red");
   gslc_ElemXListboxAddItem(&m_gui, pElemRef, "Orange");
   gslc_ElemXListboxAddItem(&m_gui, pElemRef, "Yellow");
@@ -159,6 +187,7 @@ bool InitOverlays()
   gslc_ElemSetCol(&m_gui, pElemRef, GSLC_COL_BLUE_DK3, GSLC_COL_GRAY_DK3, GSLC_COL_GREEN_DK1);
   gslc_ElemSetFrameEn(&m_gui, pElemRef, true);
   gslc_ElemSetTxtCol(&m_gui, pElemRef, GSLC_COL_WHITE);
+  gslc_ElemSetTxtMarginXY(&m_gui, pElemRef, 5, 0); // Provide additional margin from left side
   m_pElemListbox = pElemRef; // Save for quick access
 
 
@@ -177,14 +206,12 @@ void setup()
   if (!gslc_Init(&m_gui, &m_drv, m_asPage, MAX_PAGE, m_asFont, MAX_FONT)) { return; }
 
   // Load Fonts
-  #ifdef USE_EXTRA_FONTS
-    // Demonstrate the use of additional fonts (must have #include)
-    if (!gslc_FontSet(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_PTR, &FreeSansBold9pt7b, 1)) { return; }
-  #else
-    // Use default font
-    if (!gslc_FontSet(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_PTR, NULL, 1)) { return; }
-  #endif
+  if (!gslc_FontSet(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_PTR, FONT_NAME1, 1)) { return; }
   if (!gslc_FontSet(&m_gui, E_FONT_TXT, GSLC_FONTREF_PTR, NULL, 1)) { return; }
+  // Some display drivers need to set a mode to use the extra fonts
+  #if defined(SET_FONT_MODE1)
+    gslc_FontSetMode(&m_gui, E_FONT_EXTRA, GSLC_FONTREF_MODE_1);
+  #endif
 
   // Create graphic elements
   InitOverlays();
